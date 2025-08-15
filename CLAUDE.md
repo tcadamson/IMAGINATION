@@ -38,6 +38,7 @@
 - No attribution or generation indicators
 - Subject line only for simple changes
 - Add body with context only when necessary to explain why the change was made
+- Use lists in the body when elaborating on multiple changes
 
 ## Commands
 Run linting and type checking:
