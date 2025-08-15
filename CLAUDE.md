@@ -42,7 +42,7 @@
 ## Commands
 Run linting and type checking:
 ```bash
-# Add appropriate linting commands when dependencies are added
-# Example: python -m flake8 .
-# Example: python -m mypy .
+# Linting and formatting with ruff
+python -m ruff check .
+python -m ruff format .
 ```
