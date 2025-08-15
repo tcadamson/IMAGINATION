@@ -7,14 +7,11 @@ import numpy as np
 import pyautogui
 
 
-class Window:
-    def __init__(self, title_substring: str = "IMAGINE Version"):
-        self.title_substring = title_substring
-        windows = gw.getWindowsWithTitle(title_substring)
+class ImagineWindow:
+    def __init__(self):
+        windows = gw.getWindowsWithTitle("IMAGINE Version 1.")
         if not windows:
-            raise ValueError(
-                f"No window found with title containing '{title_substring}'"
-            )
+            raise ValueError("No IMAGINE windows found")
         self._window = windows[0]
 
     @property
@@ -103,7 +100,7 @@ class Window:
 def test_match(template_filename: str) -> None:
     """Test function to match template and move mouse to location."""
     try:
-        window = Window()
+        window = ImagineWindow()
         match_pos = window.match_template(template_filename)
 
         if match_pos:
