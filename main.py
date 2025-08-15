@@ -7,101 +7,113 @@ import numpy as np
 import pyautogui
 
 
-def capture_window(title: str = "IMAGINE Version") -> np.ndarray:
-    """
-    Capture a window by title and return as OpenCV numpy array.
+class Window:
+    def __init__(self, title_substring: str = "IMAGINE Version"):
+        self.title_substring = title_substring
+        windows = gw.getWindowsWithTitle(title_substring)
+        if not windows:
+            raise ValueError(
+                f"No window found with title containing '{title_substring}'"
+            )
+        self._window = windows[0]
 
-    Args:
-        title: Substring to search for in window titles
+    @property
+    def left(self) -> int:
+        return self._window.left
 
-    Returns:
-        OpenCV numpy array (BGR format) of the window contents
+    @property
+    def top(self) -> int:
+        return self._window.top
 
-    Raises:
-        ValueError: If no window with matching title is found
-    """
-    windows = gw.getWindowsWithTitle(title)
-    if not windows:
-        raise ValueError(f"No window found with title containing '{title}'")
+    @property
+    def width(self) -> int:
+        return self._window.width
 
-    window = windows[0]
-    window.activate()
-    time.sleep(0.1)  # Allow window activation to complete
+    @property
+    def height(self) -> int:
+        return self._window.height
 
-    with mss.mss() as sct:
-        region = {
-            "left": window.left,
-            "top": window.top,
-            "width": window.width,
-            "height": window.height,
-        }
-        capture = sct.grab(region)
+    @property
+    def image(self) -> np.ndarray:
+        """
+        Capture the window contents as OpenCV numpy array.
 
-    # Convert MSS capture to OpenCV format (BGR numpy array)
-    img_array = np.array(capture)
-    return cv2.cvtColor(img_array, cv2.COLOR_BGRA2BGR)
+        Returns:
+            OpenCV numpy array (BGR format) of the window contents
+        """
+        self._window.activate()
+        time.sleep(0.1)  # Allow window activation to complete
 
+        with mss.mss() as sct:
+            region = {
+                "left": self._window.left,
+                "top": self._window.top,
+                "width": self._window.width,
+                "height": self._window.height,
+            }
+            capture = sct.grab(region)
 
-def match_template(
-    image: np.ndarray, template_filename: str
-) -> tuple[float, tuple[int, int]]:
-    """
-    Match a template against the captured image.
+        # Convert MSS capture to OpenCV format (BGR numpy array)
+        img_array = np.array(capture)
+        return cv2.cvtColor(img_array, cv2.COLOR_BGRA2BGR)
 
-    Args:
-        image: OpenCV numpy array (BGR format) from capture_window()
-        template_filename: Filename of template image in templates/ directory
+    def match_template(
+        self, template_filename: str, confidence: float = 0.8
+    ) -> tuple[int, int] | None:
+        """
+        Match a template against the window contents.
 
-    Returns:
-        Tuple of (confidence_score, (x, y)) where confidence is 0-1 and
-        (x, y) is the top-left corner of the best match
+        Args:
+            template_filename: Filename of template image in templates/ directory
+            confidence: Minimum confidence threshold (0-1), defaults to 0.8
 
-    Raises:
-        FileNotFoundError: If template file doesn't exist
-    """
-    template_path = os.path.join("templates", template_filename)
-    if not os.path.exists(template_path):
-        raise FileNotFoundError(f"Template not found: {template_path}")
+        Returns:
+            Tuple of (screen_x, screen_y) absolute screen coordinates if match found,
+            None if no match above confidence threshold
 
-    template = cv2.imread(template_path)
-    if template is None:
-        raise FileNotFoundError(f"Could not load template: {template_path}")
+        Raises:
+            FileNotFoundError: If template file doesn't exist
+        """
+        template_path = os.path.join("templates", template_filename)
+        if not os.path.exists(template_path):
+            raise FileNotFoundError(f"Template not found: {template_path}")
 
-    # Perform template matching using normalized cross correlation
-    result = cv2.matchTemplate(image, template, cv2.TM_CCOEFF_NORMED)
+        template = cv2.imread(template_path)
+        if template is None:
+            raise FileNotFoundError(f"Could not load template: {template_path}")
 
-    # Find the best match location
-    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+        # Perform template matching using normalized cross correlation
+        result = cv2.matchTemplate(self.image, template, cv2.TM_CCOEFF_NORMED)
 
-    return max_val, max_loc
+        # Find the best match location
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
+        # Check if confidence meets threshold
+        if max_val < confidence:
+            return None
 
-def test_capture() -> None:
-    """Test function to capture window and save to file."""
-    try:
-        image = capture_window()
-        timestamp = int(time.time())
-        filename = f"{timestamp}.png"
-        filepath = os.path.join("tests", filename)
-        cv2.imwrite(filepath, image)
-        print(f"Capture saved as {filepath}")
-    except ValueError as e:
-        print(f"Error: {e}")
+        # Convert window-relative coordinates to screen-absolute coordinates
+        window_x, window_y = max_loc
+        screen_x = self.left + window_x
+        screen_y = self.top + window_y
+
+        return (screen_x, screen_y)
 
 
 def test_match(template_filename: str) -> None:
     """Test function to match template and move mouse to location."""
     try:
-        image = capture_window()
-        confidence, (x, y) = match_template(image, template_filename)
+        window = Window()
+        match_pos = window.match_template(template_filename)
 
-        print(f"Template '{template_filename}' found with confidence: {confidence:.3f}")
-
-        if confidence > 0.8:
+        if match_pos:
+            x, y = match_pos
             pyautogui.moveTo(x, y)
-            print(f"Mouse moved to coordinates: ({x}, {y})")
+            print(f"Template '{template_filename}' found - mouse moved to: ({x}, {y})")
         else:
-            print("Confidence too low - mouse not moved")
+            print(
+                f"Template '{template_filename}' not found with sufficient confidence"
+            )
 
     except (ValueError, FileNotFoundError) as e:
         print(f"Error: {e}")
