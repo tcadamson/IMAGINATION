@@ -26,6 +26,7 @@ def capture_window(title: str = "IMAGINE Version") -> np.ndarray:
 
     window = windows[0]
     window.activate()
+    time.sleep(0.1)  # Allow window activation to complete
 
     with mss.mss() as sct:
         region = {
