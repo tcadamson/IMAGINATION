@@ -4,7 +4,7 @@ import time
 import pygetwindow as gw
 import cv2
 import numpy as np
-import pyautogui
+import pydirectinput
 
 
 class ImagineWindow:
@@ -105,7 +105,7 @@ def test_match(template_filename: str) -> None:
 
         if match_pos:
             x, y = match_pos
-            pyautogui.moveTo(x, y)
+            pydirectinput.moveTo(x, y)
             print(f"Template '{template_filename}' found - mouse moved to: ({x}, {y})")
         else:
             print(
