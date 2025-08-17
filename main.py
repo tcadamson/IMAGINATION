@@ -13,30 +13,37 @@ pydirectinput.PAUSE = 0.25
 class Controller:
     def __init__(self, epsilon: float = 0.015):
         self.epsilon = epsilon
-    
+
     def press(self, key: str) -> None:
         """Press a key with epsilon timing to behave well with DirectX."""
         pydirectinput.press(key, duration=self.epsilon)
-    
+
     def hotkey(self, *keys: str) -> None:
         """Execute hotkey combination with epsilon timing."""
         pydirectinput.hotkey(*keys, wait=self.epsilon)
-    
+
     def scroll(self, clicks: int) -> None:
         """Scroll with epsilon timing."""
         pydirectinput.scroll(clicks, interval=self.epsilon)
-    
-    def leftClick(self, x: int, y: int) -> None:
+
+    def leftClick(
+        self,
+        x: int,
+        y: int,
+    ) -> None:
         """Left click at coordinates."""
         pydirectinput.leftClick(x, y)
-    
+        pydirectinput.mouseUp()  # Ensure click always terminates
+
     def rightClick(self, x: int, y: int) -> None:
         """Right click at coordinates."""
         pydirectinput.rightClick(x, y)
-    
+        pydirectinput.mouseUp(button=pydirectinput.MOUSE_SECONDARY)
+
     def doubleClick(self, x: int, y: int) -> None:
         """Double click at coordinates."""
-        pydirectinput.doubleClick(x, y)
+        pydirectinput.doubleClick(x, y, button=pydirectinput.MOUSE_PRIMARY)
+        pydirectinput.mouseUp()
 
 
 class ImagineWindow:
