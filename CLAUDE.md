@@ -12,9 +12,10 @@
 - Prefer composition over inheritance
 
 ## Best Practices
-- Use type hints for function parameters and return values
+- Maintain consistency with existing code style and patterns; when in doubt, follow the conventions already established in the codebase
+- Use modern type hints with built-in types (`list[str]`, `dict[str, int]`) instead of typing module imports (`List`, `Dict`); only import from typing when necessary (`Union`, `Optional`, `Protocol`, `TypeVar`); prefer `str | None` over `Optional[str]` and `int | str` over `Union[int, str]` in Python 3.10+
 - Handle exceptions gracefully with specific exception types
-- Write docstrings for modules, classes, and functions
+- Write docstrings for public modules, classes, and functions (following PEP 257); for simple, straightforward functions, a concise one-line docstring is sufficient
 - Use list/dict comprehensions when they improve readability
 - Avoid deep nesting - prefer early returns and guard clauses
 
