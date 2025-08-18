@@ -259,6 +259,15 @@ class ImagineWindow:
                 break
             self._window.activate()
 
+
+class Bot:
+    """Bot class that manages states and executes automation commands."""
+
+    def __init__(self):
+        """Initialize bot with window and starting state."""
+        self.window = ImagineWindow()
+        self.state = NormalizeState(self)
+
     def execute_commands(self, *commands: Command) -> bool:
         """
         Execute commands sequentially with shared context.
@@ -272,10 +281,10 @@ class ImagineWindow:
         """
         context = {}
         for command in commands:
-            self.focus()
-            context["window_capture"] = self.capture
-            context["window_left"] = self.left
-            context["window_top"] = self.top
+            self.window.focus()
+            context["window_capture"] = self.window.capture
+            context["window_left"] = self.window.left
+            context["window_top"] = self.window.top
             result = command.execute(context)
             if result.status == CommandStatus.FAILURE:
                 print(
@@ -285,6 +294,77 @@ class ImagineWindow:
             time.sleep(0.2)
         return True
 
+    def run(self) -> None:
+        """Run states until None is encountered."""
+        while self.state:
+            self.state = self.state.run()
+
+    def stop(self) -> None:
+        """Stop the bot by setting state to None."""
+        self.state = None
+
+
+class State(ABC):
+    """Abstract base class for bot states."""
+
+    def __init__(self, bot: Bot):
+        """Initialize state with reference to bot."""
+        self.bot = bot
+
+    @abstractmethod
+    def run(self) -> "State | None":
+        """Execute state logic.
+
+        Returns:
+            Next state to transition to, or None to stop the bot
+        """
+        pass
+
+
+class CheckLocationState(State):
+    def run(self) -> State | None:
+        if self.bot.execute_commands(
+            LocateTemplateCommand("map", grayscale=True),
+            ClickCommand(),
+            LocateTemplateCommand("map_cathedral"),
+            HotkeyCommand("shift", "c"),
+        ):
+            return None
+        else:
+            return ThreadToCathedralState(self.bot)
+
+
+class ThreadToCathedralState(State):
+    def run(self) -> State | None:
+        if self.bot.execute_commands(
+            LocateTemplateCommand("thread"),
+            ClickCommand(clicks=2),
+            LocateTemplateCommand("thread_cathedral"),
+            ClickCommand(clicks=2),
+            LocateTemplateCommand("thread_yes"),
+            ClickCommand(),
+            WaitCommand(1),
+        ):
+            return CheckLocationState(self.bot)
+        else:
+            return self
+
+
+class NormalizeState(State):
+    def run(self) -> State | None:
+        if self.bot.execute_commands(
+            HotkeyCommand("shift", "h"),
+            LocateTemplateCommand("show_ui", grayscale=True),
+            ScrollCommand(75),
+            ScrollCommand(-15),
+            HotkeyCommand("shift", "h"),
+            HotkeyCommand("shift", "c"),
+        ):
+            return ThreadToCathedralState(self.bot)
+        else:
+            return self
+
 
 if __name__ == "__main__":
-    pass
+    bot = Bot()
+    bot.run()
