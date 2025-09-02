@@ -1,19 +1,27 @@
-"""Automation framework for IMAGINE game interaction.
+"""Automation framework for the IMAGINE game client.
 
-Provides command pattern-based automation for window capture, template matching,
-and input control for the IMAGINE game client.
+Provides tools for matching templates, dispatching commands in isolation and in sequence,
+and managing state. The framework is built to have moderate resilience against network
+instability and aberrant client responses. Created strictly for rebirthing, it may be extended
+to fulfill other automation tasks (especially UI tasks).
 """
 
-import mss
 import os
+import sys
 import time
-import pygetwindow as gw
-import cv2
-import numpy as np
-import pydirectinput
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, auto
+
+import cv2
+import mss
+import numpy
+import pydirectinput
+import pywinctl
+
+# Global delay between each pydirectinput call
+pydirectinput.PAUSE = 0.06
 
 
 class CommandStatus(Enum):
@@ -31,15 +39,28 @@ class CommandResult:
     message: str = ""
 
 
+@dataclass
+class CommandContext:
+    """Execution context containing client data and state for commands."""
+
+    capture: numpy.ndarray | None = None
+    origin: tuple[int, int] | None = None
+    center: tuple[int, int] | None = None
+    last_template_location: tuple[int, int] | None = None
+
+
 class Command(ABC):
     """Abstract base class for automation commands."""
 
+    def __init__(self, max_attempts: int = 1):
+        self.max_attempts = max_attempts
+
     @abstractmethod
-    def execute(self, context: dict) -> CommandResult:
+    def execute(self, context: CommandContext) -> CommandResult:
         """Execute the command with given context.
 
         Args:
-            context: Shared execution context dictionary
+            context: Shared execution context containing client data
 
         Returns:
             CommandResult indicating success or failure
@@ -47,27 +68,15 @@ class Command(ABC):
         pass
 
 
-class ScrollCommand(Command):
-    """Command to perform mouse scroll operations."""
-
-    def __init__(self, clicks: int):
-        """Initialize scroll command with click count."""
-        self.clicks = clicks
-
-    def execute(self, context: dict) -> CommandResult:
-        """Execute scroll operation."""
-        pydirectinput.scroll(self.clicks, interval=0.015)
-        return CommandResult(CommandStatus.SUCCESS)
-
-
 class WaitCommand(Command):
     """Command to pause execution for a specified duration."""
 
     def __init__(self, seconds: float):
         """Initialize wait command with duration in seconds."""
+        super().__init__()
         self.seconds = seconds
 
-    def execute(self, context: dict) -> CommandResult:
+    def execute(self, context: CommandContext) -> CommandResult:
         """Execute wait operation."""
         time.sleep(self.seconds)
         return CommandResult(CommandStatus.SUCCESS)
@@ -76,13 +85,16 @@ class WaitCommand(Command):
 class HotkeyCommand(Command):
     """Command to send keyboard hotkey combinations."""
 
-    def __init__(self, *keys: str):
+    def __init__(self, *keys: str, presses: int = 1):
         """Initialize hotkey command with key combination."""
+        super().__init__()
         self.keys = keys
+        self.presses = presses
 
-    def execute(self, context: dict) -> CommandResult:
+    def execute(self, context: CommandContext) -> CommandResult:
         """Execute hotkey operation."""
-        pydirectinput.hotkey(*self.keys, wait=0.05)
+        for _ in range(self.presses):
+            pydirectinput.hotkey(*self.keys, wait=0.05)
         return CommandResult(CommandStatus.SUCCESS)
 
 
@@ -93,8 +105,8 @@ class ClickCommand(Command):
         self,
         x: int | None = None,
         y: int | None = None,
-        button=pydirectinput.MOUSE_LEFT,
-        clicks: int = 1,
+        button: str = pydirectinput.MOUSE_PRIMARY,
+        click_count: int = 1,
     ):
         """Initialize click command.
 
@@ -102,19 +114,19 @@ class ClickCommand(Command):
             x: X coordinate to click (uses last template location if None)
             y: Y coordinate to click (uses last template location if None)
             button: Mouse button to click (default: left button)
-            clicks: Number of clicks to perform
+            click_count: Number of clicks to perform
         """
+        super().__init__()
         self.x = x
         self.y = y
         self.button = button
-        self.clicks = clicks
+        self.click_count = click_count
 
-    def execute(self, context: dict) -> CommandResult:
+    def execute(self, context: CommandContext) -> CommandResult:
         """Execute click command.
 
         Args:
-            context: Shared context dict containing:
-                - last_template_location: (x, y) tuple if coordinates not provided
+            context: Shared context containing last_template_location if coordinates not provided
 
         Returns:
             CommandResult with SUCCESS status
@@ -122,66 +134,105 @@ class ClickCommand(Command):
         if self.x is not None and self.y is not None:
             x, y = self.x, self.y
         else:
-            x, y = context["last_template_location"]
+            x, y = context.last_template_location or context.center
 
-        pydirectinput.click(x, y, clicks=self.clicks, button=self.button)
-        pydirectinput.mouseUp(button=self.button)
+        for _ in range(self.click_count):
+            pydirectinput.moveTo(x, y, attempt_pixel_perfect=True)
+            pydirectinput.mouseDown(x, y, button=self.button)
+            pydirectinput.mouseUp(button=self.button)
+        return CommandResult(CommandStatus.SUCCESS)
+
+
+class DragCommand(Command):
+    """Command to perform mouse drag operations."""
+
+    def __init__(
+        self,
+        x: int | None = None,
+        y: int | None = None,
+        button: str = pydirectinput.MOUSE_SECONDARY,
+        drag_count: int = 1,
+    ):
+        """Initialize drag command.
+
+        Args:
+            x: X offset to drag relative to current position
+            y: Y offset to drag relative to current position
+            button: Mouse button to use for dragging (default: secondary button)
+        """
+        super().__init__()
+        self.x = x
+        self.y = y
+        self.button = button
+        self.drag_count = drag_count
+
+    def execute(self, context: CommandContext) -> CommandResult:
+        """Execute drag command.
+
+        Returns:
+            CommandResult with SUCCESS status
+        """
+        cx, cy = context.center
+        for _ in range(self.drag_count):
+            pydirectinput.moveTo(cx, cy, attempt_pixel_perfect=True)
+            pydirectinput.mouseDown(button=pydirectinput.MOUSE_SECONDARY)
+            pydirectinput.moveTo(
+                cx + self.x,
+                cy + self.y,
+                attempt_pixel_perfect=True,
+            )
+            pydirectinput.mouseUp(button=pydirectinput.MOUSE_SECONDARY)
         return CommandResult(CommandStatus.SUCCESS)
 
 
 class LocateTemplateCommand(Command):
-    """Command to locate template images within the game window."""
+    """Command to locate template images within the client capture."""
 
     def __init__(
-        self, template_id: str, confidence: float = 0.8, grayscale: bool = False
+        self,
+        template_id: str,
+        confidence: float = 0.8,
+        color: bool = False,
     ):
         """Initialize template matching command.
 
         Args:
             template_id: Name of template file (without .png extension)
             confidence: Minimum confidence threshold for template matching
-            grayscale: Whether to perform matching in grayscale
+            color: Whether to perform matching in color
         """
+        super().__init__()
         self.template_id = template_id
         self.confidence = confidence
-        self.grayscale = grayscale
+        self.color = color
 
-    def execute(self, context: dict) -> CommandResult:
+    def execute(self, context: CommandContext) -> CommandResult:
         """
         Execute template matching command.
 
         Args:
-            context: Shared context dict containing:
-                - window_capture: np.ndarray of captured window
-                - window_left: int, window's left screen coordinate
-                - window_top: int, window's top screen coordinate
+            context: Shared context containing client capture and coordinates
 
         Returns:
             CommandResult with SUCCESS if template found above confidence threshold,
-            FAILURE otherwise. On success, sets context["last_template_location"] to
-            (screen_x, screen_y) tuple of absolute screen coordinates.
+            FAILURE otherwise. On success, sets context.last_template_location to
+            (screen_x, screen_y) tuple of absolute screen coordinates for template center.
         """
-        window_capture = context["window_capture"]
-        window_left = context["window_left"]
-        window_top = context["window_top"]
+        capture = context.capture
+        x, y = context.origin
 
         template_path = os.path.join("templates", f"{self.template_id}.png")
-        if not os.path.exists(template_path):
-            return CommandResult(
-                CommandStatus.FAILURE, f"Template not found: {template_path}"
-            )
-
         template = cv2.imread(template_path)
         if template is None:
             return CommandResult(
                 CommandStatus.FAILURE, f"Could not load template: {template_path}"
             )
 
-        if self.grayscale:
-            window_capture = cv2.cvtColor(window_capture, cv2.COLOR_BGR2GRAY)
+        if not self.color:
+            capture = cv2.cvtColor(capture, cv2.COLOR_BGR2GRAY)
             template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
 
-        result = cv2.matchTemplate(window_capture, template, cv2.TM_CCOEFF_NORMED)
+        result = cv2.matchTemplate(capture, template, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
         if max_val < self.confidence:
@@ -190,88 +241,98 @@ class LocateTemplateCommand(Command):
                 f"Template '{self.template_id}' not found with confidence {self.confidence}",
             )
 
-        window_x, window_y = max_loc
-        screen_x = window_left + window_x
-        screen_y = window_top + window_y
+        template_height, template_width = template.shape[:2]
+        match_x, match_y = max_loc
+        screen_x = x + match_x + template_width // 2
+        screen_y = y + match_y + template_height // 2
 
-        context["last_template_location"] = (screen_x, screen_y)
+        context.last_template_location = (screen_x, screen_y)
         return CommandResult(CommandStatus.SUCCESS)
 
 
-class ImagineWindow:
-    """Wrapper class for IMAGINE game window interaction and automation."""
+class ImagineClient:
+    """Wrapper class for IMAGINE client data and interaction."""
 
-    TITLE = "IMAGINE Version 1."
+    IMAGINE_CLIENT_IDENTIFIER = "IMAGINE Version 1."
 
     def __init__(self):
-        """Initialize IMAGINE window interface."""
-        windows = gw.getWindowsWithTitle(self.TITLE)
-        if not windows:
-            raise ValueError("No IMAGINE windows found")
+        """Initialize the IMAGINE client window reference."""
+        windows = pywinctl.getWindowsWithTitle(
+            self.IMAGINE_CLIENT_IDENTIFIER, condition=pywinctl.Re.STARTSWITH
+        )
         self._window = windows[0]
 
     @property
-    def left(self) -> int:
-        """Left screen coordinate of the window."""
-        return self._window.left
+    def frame(self) -> tuple[int, int, int, int]:
+        """Bounding box of the client frame (x, y, right, bottom)."""
+        return self._window.getClientFrame()
 
     @property
-    def top(self) -> int:
-        """Top screen coordinate of the window."""
-        return self._window.top
+    def x(self) -> int:
+        """Left coordinate of the client frame."""
+        return self.frame[0]
 
     @property
-    def width(self) -> int:
-        """Width of the window in pixels."""
-        return self._window.width
+    def y(self) -> int:
+        """Top coordinate of the client frame."""
+        return self.frame[1]
 
     @property
-    def height(self) -> int:
-        """Height of the window in pixels."""
-        return self._window.height
+    def right(self) -> int:
+        """Right coordinate of the client frame."""
+        return self.frame[2]
 
     @property
-    def capture(self) -> np.ndarray:
+    def bottom(self) -> int:
+        """Bottom coordinate of the client frame."""
+        return self.frame[3]
+
+    @property
+    def cx(self) -> int:
+        """Horizontal center coordinate of the client frame."""
+        return (self.x + self.right) // 2
+
+    @property
+    def cy(self) -> int:
+        """Vertical center coordinate of the client frame."""
+        return (self.y + self.bottom) // 2
+
+    @property
+    def capture(self) -> numpy.ndarray:
         """
-        Capture the window contents as OpenCV numpy array.
+        Capture the client frame contents as OpenCV numpy array.
 
         Returns:
-            OpenCV numpy array (BGR format) of the window contents
+            OpenCV numpy array (BGR format) of the client frame contents
         """
-        with mss.mss() as sct:
-            capture_region = {
-                "left": self._window.left,
-                "top": self._window.top,
-                "width": self._window.width,
-                "height": self._window.height,
-            }
-            capture = sct.grab(capture_region)
-
+        with mss.mss() as screenshot:
+            capture = screenshot.grab(self.frame)
         # Convert MSS capture to OpenCV format (BGR numpy array)
-        capture_array = np.array(capture)
+        capture_array = numpy.array(capture)
         return cv2.cvtColor(capture_array, cv2.COLOR_BGRA2BGR)
 
+    @property
+    def focused(self) -> bool:
+        """Check if the client window is currently focused."""
+        return self.IMAGINE_CLIENT_IDENTIFIER in pywinctl.getActiveWindowTitle()
+
     def focus(self) -> None:
-        """Bring the IMAGINE window to the foreground."""
-        while True:
-            active_window = gw.getActiveWindow()
-            if active_window is not None and self.TITLE in active_window.title:
-                break
-            self._window.activate()
+        """Bring the client window to the foreground."""
+        self._window.activate()
 
 
-class Bot:
+class ImagineBot:
     """Bot class that manages states and executes automation commands."""
 
     def __init__(self):
-        """Initialize bot with window and starting state."""
-        self.window = ImagineWindow()
-        self.state = NormalizeState(self)
+        """Initialize bot with IMAGINE client reference and starting state."""
+        self.client = ImagineClient()
+        self.state = ResetUIState(self, next_state=ResetCameraState)
 
     def execute_commands(self, *commands: Command) -> bool:
         """
         Execute commands sequentially with shared context.
-        Ensures window is focused before each command execution.
+        Ensures client is focused before each command execution.
 
         Args:
             *commands: Variable number of Command objects to execute
@@ -279,40 +340,87 @@ class Bot:
         Returns:
             True if all commands succeeded, False if any command failed
         """
-        context = {}
+        context = CommandContext()
         for command in commands:
-            self.window.focus()
-            context["window_capture"] = self.window.capture
-            context["window_left"] = self.window.left
-            context["window_top"] = self.window.top
-            result = command.execute(context)
-            if result.status == CommandStatus.FAILURE:
+            for attempt in range(command.max_attempts):
+                time.sleep(0.1)
+
+                if not self.client.focused:
+                    sys.exit()
+
+                context.capture = self.client.capture
+                context.origin = (self.client.x, self.client.y)
+                context.center = (self.client.cx, self.client.cy)
+                result = command.execute(context)
+
+                if result.status == CommandStatus.SUCCESS:
+                    break
+
                 print(
                     f"Command failed: {command.__class__.__name__}{f' - {result.message}' if result.message else ''}"
                 )
-                return False
-            time.sleep(0.2)
+
+                if attempt + 1 == command.max_attempts:
+                    return False
         return True
 
     def run(self) -> None:
         """Run states until None is encountered."""
+        self.client.focus()
+        attempt = 1
         while self.state:
-            self.state = self.state.run()
+            result = self.state.run(attempt)
 
-    def stop(self) -> None:
-        """Stop the bot by setting state to None."""
-        self.state = None
+            if isinstance(self.state, result.next_state):
+                if result.status == StateStatus.FAILURE:
+                    attempt += 1
+            else:
+                attempt = 1
+
+            if attempt > self.state.max_attempts:
+                # TODO: Fallback state?
+                self.state = ThreadToCathedralState(self)
+            elif result.next_state is not None:
+                self.state = result.next_state(self, **(result.next_state_kwargs or {}))
+            else:
+                self.state = None
+
+
+class StateStatus(Enum):
+    """Status enumeration for state execution results."""
+
+    SUCCESS = auto()
+    FAILURE = auto()
+
+
+@dataclass
+class StateResult:
+    """Result of state execution with status and next state transition information."""
+
+    status: StateStatus
+    message: str = ""
+    next_state: "State | None" = None
+    next_state_kwargs: dict | None = None
 
 
 class State(ABC):
     """Abstract base class for bot states."""
 
-    def __init__(self, bot: Bot):
+    def __init__(
+        self,
+        bot: ImagineBot,
+        next_state: "State | None" = None,
+        next_state_kwargs: dict | None = None,
+        max_attempts: int = numpy.inf,
+    ):
         """Initialize state with reference to bot."""
         self.bot = bot
+        self.next_state = next_state
+        self.next_state_kwargs = next_state_kwargs
+        self.max_attempts = max_attempts
 
     @abstractmethod
-    def run(self) -> "State | None":
+    def run(self, attempt: int) -> StateResult:
         """Execute state logic.
 
         Returns:
@@ -321,50 +429,252 @@ class State(ABC):
         pass
 
 
-class CheckLocationState(State):
-    def run(self) -> State | None:
-        if self.bot.execute_commands(
-            LocateTemplateCommand("map", grayscale=True),
-            ClickCommand(),
-            LocateTemplateCommand("map_cathedral"),
-            HotkeyCommand("shift", "c"),
-        ):
-            return None
-        else:
-            return ThreadToCathedralState(self.bot)
-
-
 class ThreadToCathedralState(State):
-    def run(self) -> State | None:
-        if self.bot.execute_commands(
-            LocateTemplateCommand("thread"),
-            ClickCommand(clicks=2),
-            LocateTemplateCommand("thread_cathedral"),
-            ClickCommand(clicks=2),
-            LocateTemplateCommand("thread_yes"),
-            ClickCommand(),
-            WaitCommand(1),
-        ):
-            return CheckLocationState(self.bot)
-        else:
-            return self
+    def run(self, attempt: int) -> StateResult:
+        return StateResult(
+            status=StateStatus.SUCCESS,
+            next_state=SequenceState,
+            next_state_kwargs={
+                "next_state": self.next_state or ApproachCathedralMasterState,
+                "next_state_kwargs": self.next_state_kwargs,
+                "sequence": (
+                    "thread",
+                    "thread_cathedral",
+                    "thread_yes",
+                ),
+                "sequence_complete": lambda: not self.bot.execute_commands(
+                    LocateTemplateCommand("thread_yes")
+                ),
+                "click_count": 2,
+            },
+        )
 
 
-class NormalizeState(State):
-    def run(self) -> State | None:
-        if self.bot.execute_commands(
-            HotkeyCommand("shift", "h"),
-            LocateTemplateCommand("show_ui", grayscale=True),
-            ScrollCommand(75),
-            ScrollCommand(-15),
-            HotkeyCommand("shift", "h"),
+class ResetUIState(State):
+    def run(self, attempt: int) -> StateResult:
+        self.bot.execute_commands(
+            HotkeyCommand("esc"),
             HotkeyCommand("shift", "c"),
+            HotkeyCommand("shift", "h"),
+        )
+
+        if not self.bot.execute_commands(LocateTemplateCommand("show_ui")):
+            return StateResult(
+                status=StateStatus.FAILURE,
+                next_state=ResetUIState,
+                next_state_kwargs={"next_state": self.next_state},
+            )
+
+        self.bot.execute_commands(
+            HotkeyCommand("shift", "h"),
+            LocateTemplateCommand("show_bar"),
+            ClickCommand(),
+        )
+        return StateResult(
+            status=StateStatus.SUCCESS,
+            next_state=SequenceState,
+            next_state_kwargs={
+                "next_state": self.next_state,
+                "sequence": ("inventory",),
+                "sequence_complete": lambda: self.bot.execute_commands(
+                    LocateTemplateCommand("inventory_window")
+                ),
+            },
+        )
+
+
+class ResetCameraState(State):
+    def run(self, attempt: int) -> StateResult:
+        self.bot.execute_commands(
+            HotkeyCommand("shift", "h"),
+            DragCommand(400, 0, drag_count=3),
+            HotkeyCommand("shift", "h"),
+        )
+        return StateResult(
+            status=StateStatus.SUCCESS, next_state=ThreadToCathedralState
+        )
+
+
+class RelogState(State):
+    def run(self, attempt: int) -> StateResult:
+        return StateResult(
+            status=StateStatus.SUCCESS,
+            next_state=SequenceState,
+            next_state_kwargs={
+                "next_state": FreshState,
+                "sequence": (
+                    "system",
+                    "system_select_character",
+                    "start_game",
+                ),
+                "sequence_complete": lambda: not self.bot.execute_commands(
+                    LocateTemplateCommand("select_character")
+                ),
+            },
+        )
+
+
+class FreshState(State):
+    def run(self, attempt: int) -> StateResult:
+        if not self.bot.execute_commands(LocateTemplateCommand("minimize")):
+            return StateResult(status=StateStatus.FAILURE, next_state=FreshState)
+
+        return StateResult(
+            status=StateStatus.SUCCESS,
+            next_state=ResetUIState,
+            next_state_kwargs={
+                "next_state": ResetCameraState,
+            },
+        )
+
+
+class ApproachCathedralMasterState(State):
+    def __init__(self, bot: ImagineBot):
+        super().__init__(bot, max_attempts=25)
+
+    def run(self, attempt: int) -> StateResult:
+        if attempt == 1:
+            self.bot.execute_commands(
+                DragCommand(90, 0),
+                ClickCommand(),
+            )
+
+        if self.bot.execute_commands(LocateTemplateCommand("minimize")):
+            return StateResult(
+                StateStatus.FAILURE, next_state=ApproachCathedralMasterState
+            )
+
+        return StateResult(StateStatus.SUCCESS, next_state=CathedralMasterState)
+
+
+class CathedralMasterState(State):
+    def run(self, attempt: int) -> StateResult:
+        return StateResult(
+            status=StateStatus.SUCCESS,
+            next_state=SequenceState,
+            next_state_kwargs={
+                "next_state": ApproachVivianState,
+                "sequence": (
+                    "dialogue_arrow",
+                    "cathedral_perform_rebirth_1",
+                    "cathedral_perform_rebirth_2",
+                    "cathedral_close",
+                    "cathedral_stop",
+                ),
+                "sequence_complete": lambda: self.bot.execute_commands(
+                    LocateTemplateCommand("minimize")
+                ),
+            },
+        )
+
+
+class ApproachVivianState(State):
+    def __init__(self, bot: ImagineBot, approach_directly: bool = False):
+        super().__init__(bot, max_attempts=25)
+        self.approach_directly = approach_directly
+
+    def run(self, attempt: int) -> StateResult:
+        if attempt == 1:
+            if self.approach_directly:
+                self.bot.execute_commands(
+                    DragCommand(110, 0, drag_count=2),
+                    ClickCommand(),
+                )
+            else:
+                self.bot.execute_commands(
+                    DragCommand(310, 0),
+                    ClickCommand(),
+                )
+        elif attempt == self.max_attempts:
+            return StateResult(
+                StateStatus.FAILURE,
+                next_state=ThreadToCathedralState,
+                next_state_kwargs={
+                    "next_state": ApproachVivianState,
+                    "next_state_kwargs": {"approach_directly": True},
+                },
+            )
+
+        if self.bot.execute_commands(LocateTemplateCommand("minimize")):
+            return StateResult(StateStatus.FAILURE, next_state=ApproachVivianState)
+
+        return StateResult(StateStatus.SUCCESS, next_state=VivianState)
+
+
+class VivianState(State):
+    def run(self, attempt: int) -> StateResult:
+        return StateResult(
+            status=StateStatus.SUCCESS,
+            next_state=SequenceState,
+            next_state_kwargs={
+                "next_state": ThreadToCathedralState,
+                "sequence": (
+                    "dialogue_arrow",
+                    "dialogue_arrow",
+                    "vivian_demon_level",
+                    "dialogue_end_conversation",
+                ),
+                "sequence_complete": lambda: self.bot.execute_commands(
+                    LocateTemplateCommand("minimize")
+                ),
+            },
+        )
+
+
+class SequenceState(State):
+    def __init__(
+        self,
+        bot: ImagineBot,
+        sequence: tuple[str],
+        sequence_complete: Callable[[], bool] = lambda: False,
+        index: int = 0,
+        click_count: int = 1,
+        next_state: State | None = None,
+        next_state_kwargs: dict | None = None,
+    ):
+        super().__init__(bot, next_state, next_state_kwargs)
+        self.sequence = sequence
+        self.sequence_complete = sequence_complete
+        self.index = index
+        self.click_count = click_count
+
+    def run(self, attempt: int) -> StateResult:
+        try:
+            next_template = self.sequence[self.index + 1]
+        except IndexError:
+            next_template = None
+
+        self.bot.execute_commands(
+            LocateTemplateCommand(self.sequence[self.index]),
+            ClickCommand(click_count=self.click_count),
+        )
+
+        if next_template is not None and self.bot.execute_commands(
+            LocateTemplateCommand(next_template)
         ):
-            return ThreadToCathedralState(self.bot)
-        else:
-            return self
+            self.index += 1
+        elif next_template is None and self.sequence_complete():
+            return StateResult(
+                status=StateStatus.SUCCESS,
+                next_state=self.next_state,
+                next_state_kwargs=self.next_state_kwargs,
+            )
+
+        return StateResult(
+            status=StateStatus.FAILURE,
+            next_state=SequenceState,
+            next_state_kwargs={
+                "sequence": self.sequence,
+                "sequence_complete": self.sequence_complete,
+                "index": self.index,
+                "click_count": self.click_count,
+                # Destination state (passed to final StateResult on sequence success)
+                "next_state": self.next_state,
+                "next_state_kwargs": self.next_state_kwargs,
+            },
+        )
 
 
 if __name__ == "__main__":
-    bot = Bot()
+    bot = ImagineBot()
     bot.run()
