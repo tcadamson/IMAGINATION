@@ -52,9 +52,6 @@ class CommandContext:
 class Command(ABC):
     """Abstract base class for automation commands."""
 
-    def __init__(self, max_attempts: int = 1):
-        self.max_attempts = max_attempts
-
     @abstractmethod
     def execute(self, context: CommandContext) -> CommandResult:
         """Execute the command with given context.
@@ -340,40 +337,37 @@ class Bot:
         """
         context = CommandContext()
         for command in commands:
-            for i in range(command.max_attempts):
-                time.sleep(0.1)
+            time.sleep(0.1)
 
-                if not self.client.focused:
-                    sys.exit()
+            if not self.client.focused:
+                sys.exit()
 
-                context.capture = self.client.capture
-                context.origin = (self.client.x, self.client.y)
-                context.center = (self.client.center_x, self.client.center_y)
-                result = command.execute(context)
+            context.capture = self.client.capture
+            context.origin = (self.client.x, self.client.y)
+            context.center = (self.client.center_x, self.client.center_y)
+            result = command.execute(context)
 
-                if result.status == CommandStatus.SUCCESS:
-                    break
-
+            if result.status == CommandStatus.FAILURE:
                 print(
                     f"Command failed: {command.__class__.__name__}{f' - {result.message}' if result.message else ''}"
                 )
-
-                if i + 1 == command.max_attempts:
-                    return False
+                return False
         return True
 
     def run(self) -> None:
         """Run states until None is encountered."""
         self.client.focus()
-        attempt = 1
+        elapsed = 0
         while self.state:
-            result = self.state.run(attempt)
+            start_time = time.time()
+            result = self.state.run(elapsed)
+            end_time = time.time()
 
             if result.next_state is not None:
                 if not (isinstance(self.state, result.next_state)):
-                    attempt = 1
+                    elapsed = 0
                 elif result.status == StateStatus.FAILURE:
-                    attempt += 1
+                    elapsed += end_time - start_time
 
                 self.state = result.next_state(self, **(result.next_state_kwargs or {}))
             else:
@@ -444,16 +438,16 @@ class State(ABC):
         bot: Bot,
         next_state: "State | None" = None,
         next_state_kwargs: dict | None = None,
-        max_attempts: int = numpy.inf,
+        max_elapsed: float = numpy.inf,
     ):
         """Initialize state with reference to bot."""
         self.bot = bot
         self.next_state = next_state
         self.next_state_kwargs = next_state_kwargs
-        self.max_attempts = max_attempts
+        self.max_elapsed = max_elapsed
 
     @abstractmethod
-    def run(self, attempt: int) -> StateResult:
+    def run(self, elapsed: float) -> StateResult:
         """Execute state logic.
 
         Returns:
@@ -463,7 +457,7 @@ class State(ABC):
 
 
 class ThreadToCathedralState(State):
-    def run(self, attempt: int) -> StateResult:
+    def run(self, elapsed: float) -> StateResult:
         return StateResult(
             status=StateStatus.SUCCESS,
             next_state=SequenceState,
@@ -484,7 +478,7 @@ class ThreadToCathedralState(State):
 
 
 class ResetUIState(State):
-    def run(self, attempt: int) -> StateResult:
+    def run(self, elapsed: float) -> StateResult:
         self.bot.execute_commands(
             HotkeyCommand("esc"),
             HotkeyCommand("shift", "c"),
@@ -517,7 +511,7 @@ class ResetUIState(State):
 
 
 class ResetCameraState(State):
-    def run(self, attempt: int) -> StateResult:
+    def run(self, elapsed: float) -> StateResult:
         self.bot.execute_commands(
             HotkeyCommand("shift", "h"),
             DragCommand(400, 0, drag_count=3),
@@ -529,7 +523,7 @@ class ResetCameraState(State):
 
 
 class RelogState(State):
-    def run(self, attempt: int) -> StateResult:
+    def run(self, elapsed: float) -> StateResult:
         return StateResult(
             status=StateStatus.SUCCESS,
             next_state=SequenceState,
@@ -563,14 +557,16 @@ class FreshState(State):
 
 class ApproachCathedralMasterState(State):
     def __init__(self, bot: Bot):
-        super().__init__(bot, max_attempts=25)
+        super().__init__(bot, max_elapsed=5.0)
 
-    def run(self, attempt: int) -> StateResult:
-        if attempt == 1:
+    def run(self, elapsed: float) -> StateResult:
+        if elapsed == 0:
             self.bot.execute_commands(
                 DragCommand(90, 0),
                 ClickCommand(),
             )
+        elif elapsed >= self.max_elapsed:
+            return StateResult(StateStatus.FAILURE, next_state=ThreadToCathedralState)
 
         if self.bot.execute_commands(LocateTemplateCommand("minimize")):
             return StateResult(
@@ -581,7 +577,7 @@ class ApproachCathedralMasterState(State):
 
 
 class CathedralMasterState(State):
-    def run(self, attempt: int) -> StateResult:
+    def run(self, elapsed: float) -> StateResult:
         return StateResult(
             status=StateStatus.SUCCESS,
             next_state=SequenceState,
@@ -604,15 +600,15 @@ class CathedralMasterState(State):
 
 class ApproachVivianState(State):
     def __init__(self, bot: Bot):
-        super().__init__(bot, max_attempts=25)
+        super().__init__(bot, max_elapsed=7.5)
 
-    def run(self, attempt: int) -> StateResult:
-        if attempt == 1:
+    def run(self, elapsed: float) -> StateResult:
+        if elapsed == 0:
             self.bot.execute_commands(
                 DragCommand(110, 0, drag_count=2),
                 ClickCommand(),
             )
-        elif attempt == self.max_attempts:
+        elif elapsed >= self.max_elapsed:
             return StateResult(
                 StateStatus.FAILURE,
                 next_state=ThreadToCathedralState,
@@ -626,7 +622,7 @@ class ApproachVivianState(State):
 
 
 class VivianState(State):
-    def run(self, attempt: int) -> StateResult:
+    def run(self, elapsed: float) -> StateResult:
         return StateResult(
             status=StateStatus.SUCCESS,
             next_state=SequenceState,
@@ -697,6 +693,7 @@ class SequenceState(State):
                 "next_state_kwargs": self.next_state_kwargs,
             },
         )
+
 
 if __name__ == "__main__":
     bot = RebirthBot()
