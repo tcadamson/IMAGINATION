@@ -379,7 +379,7 @@ class RebirthBot(Bot):
 
     def __init__(self):
         """Initialize bot with starting state."""
-        super().__init__(state=ResetUIState(self, next_state=ResetCameraState))
+        super().__init__(state=RelogState(self))
 
     def count_rebirths(self) -> list[int] | None:
         """Count the number of rebirths on each rebirth path."""
@@ -393,7 +393,7 @@ class RebirthBot(Bot):
 
         try:
             # Origin coordinate (uppermost, leftmost border pixel)
-            y, x = numpy.argwhere(border_mask > 0)[0]
+            x, y = numpy.argwhere(border_mask > 0)[0][::-1]
         except IndexError:
             return None
 
@@ -528,7 +528,7 @@ class RelogState(State):
             status=StateStatus.SUCCESS,
             next_state=SequenceState,
             next_state_kwargs={
-                "next_state": FreshState,
+                "next_state": ReloggedState,
                 "sequence": (
                     "system",
                     "system_select_character",
@@ -541,17 +541,15 @@ class RelogState(State):
         )
 
 
-class FreshState(State):
+class ReloggedState(State):
     def run(self, attempt: int) -> StateResult:
         if not self.bot.execute_commands(LocateTemplateCommand("minimize")):
-            return StateResult(status=StateStatus.FAILURE, next_state=FreshState)
+            return StateResult(status=StateStatus.FAILURE, next_state=ReloggedState)
 
         return StateResult(
             status=StateStatus.SUCCESS,
             next_state=ResetUIState,
-            next_state_kwargs={
-                "next_state": ResetCameraState,
-            },
+            next_state_kwargs={"next_state": ResetCameraState},
         )
 
 
@@ -697,4 +695,5 @@ class SequenceState(State):
 
 if __name__ == "__main__":
     bot = RebirthBot()
+    bot.state = ReloggedState(bot)
     bot.run()
