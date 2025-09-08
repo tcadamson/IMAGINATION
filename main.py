@@ -172,13 +172,13 @@ class DragCommand(Command):
         Returns:
             CommandResult with SUCCESS status
         """
-        cx, cy = context.center
+        center_x, center_y = context.center
         for _ in range(self.drag_count):
-            pydirectinput.moveTo(cx, cy, attempt_pixel_perfect=True)
+            pydirectinput.moveTo(center_x, center_y, attempt_pixel_perfect=True)
             pydirectinput.mouseDown(button=pydirectinput.MOUSE_SECONDARY)
             pydirectinput.moveTo(
-                cx + self.x,
-                cy + self.y,
+                center_x + self.x,
+                center_y + self.y,
                 attempt_pixel_perfect=True,
             )
             pydirectinput.mouseUp(button=pydirectinput.MOUSE_SECONDARY)
@@ -192,19 +192,19 @@ class LocateTemplateCommand(Command):
         self,
         template_id: str,
         confidence: float = 0.8,
-        color: bool = False,
+        grayscale: bool = True,
     ):
         """Initialize template matching command.
 
         Args:
             template_id: Name of template file (without .png extension)
             confidence: Minimum confidence threshold for template matching
-            color: Whether to perform matching in color
+            grayscale: Whether to perform matching in grayscale
         """
         super().__init__()
         self.template_id = template_id
         self.confidence = confidence
-        self.color = color
+        self.grayscale = grayscale
 
     def execute(self, context: CommandContext) -> CommandResult:
         """
@@ -228,7 +228,7 @@ class LocateTemplateCommand(Command):
                 CommandStatus.FAILURE, f"Could not load template: {template_path}"
             )
 
-        if not self.color:
+        if self.grayscale:
             capture = cv2.cvtColor(capture, cv2.COLOR_BGR2GRAY)
             template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
 
@@ -288,12 +288,12 @@ class ImagineClient:
         return self.frame[3]
 
     @property
-    def cx(self) -> int:
+    def center_x(self) -> int:
         """Horizontal center coordinate of the client frame."""
         return (self.x + self.right) // 2
 
     @property
-    def cy(self) -> int:
+    def center_y(self) -> int:
         """Vertical center coordinate of the client frame."""
         return (self.y + self.bottom) // 2
 
@@ -307,9 +307,7 @@ class ImagineClient:
         """
         with mss.mss() as screenshot:
             capture = screenshot.grab(self.frame)
-        # Convert MSS capture to OpenCV format (BGR numpy array)
-        capture_array = numpy.array(capture)
-        return cv2.cvtColor(capture_array, cv2.COLOR_BGRA2BGR)
+        return cv2.cvtColor(numpy.array(capture), cv2.COLOR_BGRA2BGR)
 
     @property
     def focused(self) -> bool:
@@ -321,13 +319,13 @@ class ImagineClient:
         self._window.activate()
 
 
-class ImagineBot:
-    """Bot class that manages states and executes automation commands."""
+class Bot:
+    """Base bot class that manages state and executes automation commands."""
 
-    def __init__(self):
-        """Initialize bot with IMAGINE client reference and starting state."""
+    def __init__(self, state: "State | None" = None):
+        """Initialize bot with IMAGINE client reference and optional starting state."""
         self.client = ImagineClient()
-        self.state = ResetUIState(self, next_state=ResetCameraState)
+        self.state = state
 
     def execute_commands(self, *commands: Command) -> bool:
         """
@@ -342,7 +340,7 @@ class ImagineBot:
         """
         context = CommandContext()
         for command in commands:
-            for attempt in range(command.max_attempts):
+            for i in range(command.max_attempts):
                 time.sleep(0.1)
 
                 if not self.client.focused:
@@ -350,7 +348,7 @@ class ImagineBot:
 
                 context.capture = self.client.capture
                 context.origin = (self.client.x, self.client.y)
-                context.center = (self.client.cx, self.client.cy)
+                context.center = (self.client.center_x, self.client.center_y)
                 result = command.execute(context)
 
                 if result.status == CommandStatus.SUCCESS:
@@ -360,7 +358,7 @@ class ImagineBot:
                     f"Command failed: {command.__class__.__name__}{f' - {result.message}' if result.message else ''}"
                 )
 
-                if attempt + 1 == command.max_attempts:
+                if i + 1 == command.max_attempts:
                     return False
         return True
 
@@ -371,19 +369,54 @@ class ImagineBot:
         while self.state:
             result = self.state.run(attempt)
 
-            if isinstance(self.state, result.next_state):
-                if result.status == StateStatus.FAILURE:
+            if result.next_state is not None:
+                if not (isinstance(self.state, result.next_state)):
+                    attempt = 1
+                elif result.status == StateStatus.FAILURE:
                     attempt += 1
-            else:
-                attempt = 1
 
-            if attempt > self.state.max_attempts:
-                # TODO: Fallback state?
-                self.state = ThreadToCathedralState(self)
-            elif result.next_state is not None:
                 self.state = result.next_state(self, **(result.next_state_kwargs or {}))
             else:
                 self.state = None
+
+
+class RebirthBot(Bot):
+    """Bot for automating rebirths."""
+
+    def __init__(self):
+        """Initialize bot with starting state."""
+        super().__init__(state=ResetUIState(self, next_state=ResetCameraState))
+
+    def count_rebirths(self) -> list[int] | None:
+        """Count the number of rebirths on each rebirth path."""
+        capture = self.client.capture
+
+        border_bgr = numpy.array([151, 107, 13])
+        empty_slot_bgr = numpy.array([67, 47, 8])
+
+        border_mask = cv2.inRange(capture, border_bgr, border_bgr)
+        empty_slot_mask = cv2.inRange(capture, empty_slot_bgr, empty_slot_bgr)
+
+        try:
+            # Origin coordinate (uppermost, leftmost border pixel)
+            y, x = numpy.argwhere(border_mask > 0)[0]
+        except IndexError:
+            return None
+
+        rebirths = [8] * 12
+        roi_width = 162
+        roi_height = 19
+        for i in range(len(rebirths)):
+            roi_y = y + (i * roi_height)
+            roi_mask = empty_slot_mask[roi_y : roi_y + roi_height, x : x + roi_width]
+
+            contours, _ = cv2.findContours(
+                roi_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+            empty_slots = sum(1 for contour in contours if cv2.contourArea(contour) > 0)
+
+            rebirths[i] -= empty_slots
+        return rebirths
 
 
 class StateStatus(Enum):
@@ -408,7 +441,7 @@ class State(ABC):
 
     def __init__(
         self,
-        bot: ImagineBot,
+        bot: Bot,
         next_state: "State | None" = None,
         next_state_kwargs: dict | None = None,
         max_attempts: int = numpy.inf,
@@ -529,7 +562,7 @@ class FreshState(State):
 
 
 class ApproachCathedralMasterState(State):
-    def __init__(self, bot: ImagineBot):
+    def __init__(self, bot: Bot):
         super().__init__(bot, max_attempts=25)
 
     def run(self, attempt: int) -> StateResult:
@@ -553,7 +586,8 @@ class CathedralMasterState(State):
             status=StateStatus.SUCCESS,
             next_state=SequenceState,
             next_state_kwargs={
-                "next_state": ApproachVivianState,
+                "next_state": ThreadToCathedralState,
+                "next_state_kwargs": {"next_state": ApproachVivianState},
                 "sequence": (
                     "dialogue_arrow",
                     "cathedral_perform_rebirth_1",
@@ -569,30 +603,20 @@ class CathedralMasterState(State):
 
 
 class ApproachVivianState(State):
-    def __init__(self, bot: ImagineBot, approach_directly: bool = False):
+    def __init__(self, bot: Bot):
         super().__init__(bot, max_attempts=25)
-        self.approach_directly = approach_directly
 
     def run(self, attempt: int) -> StateResult:
         if attempt == 1:
-            if self.approach_directly:
-                self.bot.execute_commands(
-                    DragCommand(110, 0, drag_count=2),
-                    ClickCommand(),
-                )
-            else:
-                self.bot.execute_commands(
-                    DragCommand(310, 0),
-                    ClickCommand(),
-                )
+            self.bot.execute_commands(
+                DragCommand(110, 0, drag_count=2),
+                ClickCommand(),
+            )
         elif attempt == self.max_attempts:
             return StateResult(
                 StateStatus.FAILURE,
                 next_state=ThreadToCathedralState,
-                next_state_kwargs={
-                    "next_state": ApproachVivianState,
-                    "next_state_kwargs": {"approach_directly": True},
-                },
+                next_state_kwargs={"next_state": ApproachVivianState},
             )
 
         if self.bot.execute_commands(LocateTemplateCommand("minimize")):
@@ -624,7 +648,7 @@ class VivianState(State):
 class SequenceState(State):
     def __init__(
         self,
-        bot: ImagineBot,
+        bot: Bot,
         sequence: tuple[str],
         sequence_complete: Callable[[], bool] = lambda: False,
         index: int = 0,
@@ -674,7 +698,6 @@ class SequenceState(State):
             },
         )
 
-
 if __name__ == "__main__":
-    bot = ImagineBot()
+    bot = RebirthBot()
     bot.run()
