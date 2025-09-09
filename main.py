@@ -337,7 +337,7 @@ class Bot:
         """
         context = CommandContext()
         for command in commands:
-            time.sleep(0.1)
+            time.sleep(0.05)
 
             if not self.client.focused:
                 sys.exit()
