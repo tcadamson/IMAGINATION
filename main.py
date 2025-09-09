@@ -320,9 +320,9 @@ class Bot:
     """Base bot class that manages state and executes automation commands."""
 
     def __init__(self, state: "State | None" = None):
-        """Initialize bot with IMAGINE client reference and optional starting state."""
-        self.client = ImagineClient()
+        """Initialize bot with starting state and IMAGINE client reference."""
         self.state = state
+        self.client = ImagineClient()
 
     def execute_commands(self, *commands: Command) -> bool:
         """
@@ -364,9 +364,9 @@ class Bot:
             end_time = time.time()
 
             if result.next_state is not None:
-                if not (isinstance(self.state, result.next_state)):
+                if not isinstance(self.state, result.next_state):
                     elapsed = 0
-                elif result.status == StateStatus.FAILURE:
+                else:
                     elapsed += end_time - start_time
 
                 self.state = result.next_state(self, **(result.next_state_kwargs or {}))
@@ -379,7 +379,7 @@ class RebirthBot(Bot):
 
     def __init__(self):
         """Initialize bot with starting state."""
-        super().__init__(state=RelogState(self))
+        super().__init__(RelogState(self))
 
     def count_rebirths(self) -> list[int] | None:
         """Count the number of rebirths on each rebirth path."""
@@ -543,7 +543,7 @@ class RelogState(State):
 
 
 class ReloggedState(State):
-    def run(self, attempt: int) -> StateResult:
+    def run(self, elapsed: float) -> StateResult:
         if not self.bot.execute_commands(LocateTemplateCommand("minimize")):
             return StateResult(status=StateStatus.FAILURE, next_state=ReloggedState)
 
@@ -560,14 +560,14 @@ class ApproachCathedralMasterState(State):
 
     def run(self, elapsed: float) -> StateResult:
         if elapsed == 0:
-            self.bot.execute_commands(
-                DragCommand(90, 0),
-                ClickCommand(),
-            )
+            self.bot.execute_commands(DragCommand(90, 0))
         elif elapsed >= self.max_elapsed:
             return StateResult(StateStatus.FAILURE, next_state=ThreadToCathedralState)
 
-        if self.bot.execute_commands(LocateTemplateCommand("minimize")):
+        if not self.bot.execute_commands(
+            LocateTemplateCommand("cathedral_perform_rebirth_1")
+        ):
+            self.bot.execute_commands(ClickCommand())
             return StateResult(
                 StateStatus.FAILURE, next_state=ApproachCathedralMasterState
             )
@@ -584,7 +584,6 @@ class CathedralMasterState(State):
                 "next_state": ThreadToCathedralState,
                 "next_state_kwargs": {"next_state": ApproachVivianState},
                 "sequence": (
-                    "dialogue_arrow",
                     "cathedral_perform_rebirth_1",
                     "cathedral_perform_rebirth_2",
                     "cathedral_close",
@@ -614,7 +613,8 @@ class ApproachVivianState(State):
                 next_state_kwargs={"next_state": ApproachVivianState},
             )
 
-        if self.bot.execute_commands(LocateTemplateCommand("minimize")):
+        if not self.bot.execute_commands(LocateTemplateCommand("vivian_demon_level")):
+            self.bot.execute_commands(ClickCommand())
             return StateResult(StateStatus.FAILURE, next_state=ApproachVivianState)
 
         return StateResult(StateStatus.SUCCESS, next_state=VivianState)
@@ -628,8 +628,6 @@ class VivianState(State):
             next_state_kwargs={
                 "next_state": ThreadToCathedralState,
                 "sequence": (
-                    "dialogue_arrow",
-                    "dialogue_arrow",
                     "vivian_demon_level",
                     "dialogue_end_conversation",
                 ),
@@ -657,7 +655,7 @@ class SequenceState(State):
         self.index = index
         self.click_count = click_count
 
-    def run(self, attempt: int) -> StateResult:
+    def run(self, elapsed: float) -> StateResult:
         try:
             next_template = self.sequence[self.index + 1]
         except IndexError:
