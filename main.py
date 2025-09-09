@@ -6,6 +6,7 @@ instability and aberrant client responses. Created strictly for rebirthing, it m
 to fulfill other automation tasks (especially UI tasks).
 """
 
+import logging
 import os
 import sys
 import time
@@ -22,6 +23,8 @@ import pywinctl
 
 # Global delay between each pydirectinput call
 pydirectinput.PAUSE = 0.06
+
+logger = logging.getLogger(__name__)
 
 
 class CommandStatus(Enum):
@@ -348,8 +351,8 @@ class Bot:
             result = command.execute(context)
 
             if result.status == CommandStatus.FAILURE:
-                print(
-                    f"Command failed: {command.__class__.__name__}{f' - {result.message}' if result.message else ''}"
+                logger.debug(
+                    f"FAILED: {command.__class__.__name__}{f' - {result.message}' if result.message else ''}"
                 )
                 return False
         return True
@@ -693,6 +696,8 @@ class SequenceState(State):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s")
+
     bot = RebirthBot()
     bot.state = ReloggedState(bot)
     bot.run()
