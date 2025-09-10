@@ -73,7 +73,6 @@ class WaitCommand(Command):
 
     def __init__(self, seconds: float):
         """Initialize wait command with duration in seconds."""
-        super().__init__()
         self.seconds = seconds
 
     def execute(self, context: CommandContext) -> CommandResult:
@@ -87,7 +86,6 @@ class HotkeyCommand(Command):
 
     def __init__(self, *keys: str, presses: int = 1):
         """Initialize hotkey command with key combination."""
-        super().__init__()
         self.keys = keys
         self.presses = presses
 
@@ -116,7 +114,6 @@ class ClickCommand(Command):
             button: Mouse button to click (default: left button)
             click_count: Number of clicks to perform
         """
-        super().__init__()
         self.x = x
         self.y = y
         self.button = button
@@ -160,7 +157,6 @@ class DragCommand(Command):
             y: Y offset to drag relative to current position
             button: Mouse button to use for dragging (default: secondary button)
         """
-        super().__init__()
         self.x = x
         self.y = y
         self.button = button
@@ -201,7 +197,6 @@ class LocateTemplateCommand(Command):
             confidence: Minimum confidence threshold for template matching
             grayscale: Whether to perform matching in grayscale
         """
-        super().__init__()
         self.template_id = template_id
         self.confidence = confidence
         self.grayscale = grayscale
