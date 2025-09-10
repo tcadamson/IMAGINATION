@@ -314,12 +314,20 @@ class ImagineClient:
         self._window.activate()
 
 
-class Bot:
+@dataclass
+class BotContext:
+    pass
+
+
+class Bot[BotContextType: BotContext](ABC):
     """Base bot class that manages state and executes automation commands."""
 
-    def __init__(self, state: "State | None" = None):
+    def __init__(
+        self, state: "State | None" = None, context: BotContextType | None = None
+    ):
         """Initialize bot with starting state and IMAGINE client reference."""
         self.state = state
+        self.context = context
         self.client = ImagineClient()
 
     def execute_commands(self, *commands: Command) -> bool:
@@ -372,12 +380,17 @@ class Bot:
                 self.state = None
 
 
-class RebirthBot(Bot):
+@dataclass
+class RebirthBotContext(BotContext):
+    rebirths: list[int] | None = None
+
+
+class RebirthBot(Bot[RebirthBotContext]):
     """Bot for automating rebirths."""
 
     def __init__(self):
         """Initialize bot with starting state."""
-        super().__init__(RelogState(self))
+        super().__init__(state=RelogState(self), context=RebirthBotContext())
 
     def count_rebirths(self) -> list[int] | None:
         """Count the number of rebirths on each rebirth path."""
@@ -428,12 +441,12 @@ class StateResult:
     next_state_kwargs: dict | None = None
 
 
-class State(ABC):
+class State[BotType: Bot](ABC):
     """Abstract base class for bot states."""
 
     def __init__(
         self,
-        bot: Bot,
+        bot: BotType,
         next_state: "State | None" = None,
         next_state_kwargs: dict | None = None,
         max_elapsed: float = numpy.inf,
@@ -454,7 +467,7 @@ class State(ABC):
         pass
 
 
-class ThreadToCathedralState(State):
+class ThreadToCathedralState(State[RebirthBot]):
     def run(self, elapsed: float) -> StateResult:
         self.bot.execute_commands(HotkeyCommand("esc"))
         return StateResult(
@@ -476,7 +489,7 @@ class ThreadToCathedralState(State):
         )
 
 
-class ResetUIState(State):
+class ResetUIState(State[Bot]):
     def run(self, elapsed: float) -> StateResult:
         self.bot.execute_commands(
             HotkeyCommand("esc"),
@@ -509,7 +522,7 @@ class ResetUIState(State):
         )
 
 
-class ResetCameraState(State):
+class ResetCameraState(State[Bot]):
     def run(self, elapsed: float) -> StateResult:
         self.bot.execute_commands(
             HotkeyCommand("shift", "h"),
@@ -521,7 +534,7 @@ class ResetCameraState(State):
         )
 
 
-class RelogState(State):
+class RelogState(State[Bot]):
     def run(self, elapsed: float) -> StateResult:
         return StateResult(
             status=StateStatus.SUCCESS,
@@ -540,7 +553,7 @@ class RelogState(State):
         )
 
 
-class ReloggedState(State):
+class ReloggedState(State[Bot]):
     def run(self, elapsed: float) -> StateResult:
         if not self.bot.execute_commands(LocateTemplateCommand("minimize")):
             return StateResult(status=StateStatus.FAILURE, next_state=ReloggedState)
@@ -552,7 +565,7 @@ class ReloggedState(State):
         )
 
 
-class ApproachCathedralMasterState(State):
+class ApproachCathedralMasterState(State[RebirthBot]):
     def __init__(self, bot: Bot):
         super().__init__(bot, max_elapsed=5.0)
 
@@ -573,7 +586,7 @@ class ApproachCathedralMasterState(State):
         return StateResult(StateStatus.SUCCESS, next_state=CathedralMasterState)
 
 
-class CathedralMasterState(State):
+class CathedralMasterState(State[RebirthBot]):
     def run(self, elapsed: float) -> StateResult:
         return StateResult(
             status=StateStatus.SUCCESS,
@@ -594,7 +607,7 @@ class CathedralMasterState(State):
         )
 
 
-class ApproachVivianState(State):
+class ApproachVivianState(State[RebirthBot]):
     def __init__(self, bot: Bot):
         super().__init__(bot, max_elapsed=7.5)
 
@@ -618,7 +631,7 @@ class ApproachVivianState(State):
         return StateResult(StateStatus.SUCCESS, next_state=VivianState)
 
 
-class VivianState(State):
+class VivianState(State[RebirthBot]):
     def run(self, elapsed: float) -> StateResult:
         return StateResult(
             status=StateStatus.SUCCESS,
@@ -636,7 +649,7 @@ class VivianState(State):
         )
 
 
-class SequenceState(State):
+class SequenceState(State[Bot]):
     def __init__(
         self,
         bot: Bot,
