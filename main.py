@@ -6,16 +6,18 @@ instability and aberrant client responses. Created strictly for rebirthing, it m
 to fulfill other automation tasks (especially UI tasks).
 """
 
+import abc
+import collections.abc
+import dataclasses
+import enum
 import logging
 import os
+import re
 import sys
 import time
-from abc import ABC, abstractmethod
-from collections.abc import Callable
-from dataclasses import dataclass
-from enum import Enum, auto
 
 import cv2
+import dotenv
 import mss
 import numpy
 import pydirectinput
@@ -26,15 +28,24 @@ pydirectinput.PAUSE = 0.06
 
 logger = logging.getLogger(__name__)
 
+# Load and cache the grayscale templates ahead of time to improve performance of LocateTemplateCommand
+templates = {
+    os.path.splitext(filename)[0]: cv2.cvtColor(
+        cv2.imread(os.path.join("templates", filename)), cv2.COLOR_BGR2GRAY
+    )
+    for filename in os.listdir("templates")
+    if filename.endswith(".png")
+}
 
-class CommandStatus(Enum):
+
+class CommandStatus(enum.Enum):
     """Status enumeration for command execution results."""
 
-    SUCCESS = auto()
-    FAILURE = auto()
+    SUCCESS = enum.auto()
+    FAILURE = enum.auto()
 
 
-@dataclass
+@dataclasses.dataclass
 class CommandResult:
     """Result of command execution with status and optional message."""
 
@@ -42,7 +53,7 @@ class CommandResult:
     message: str = ""
 
 
-@dataclass
+@dataclasses.dataclass
 class CommandContext:
     """Execution context containing client data and state for commands."""
 
@@ -50,12 +61,13 @@ class CommandContext:
     origin: tuple[int, int] | None = None
     center: tuple[int, int] | None = None
     last_template_location: tuple[int, int] | None = None
+    last_template_index: int | None = None
 
 
-class Command(ABC):
+class Command(abc.ABC):
     """Abstract base class for automation commands."""
 
-    @abstractmethod
+    @abc.abstractmethod
     def execute(self, context: CommandContext) -> CommandResult:
         """Execute the command with given context.
 
@@ -101,16 +113,16 @@ class ClickCommand(Command):
 
     def __init__(
         self,
-        x: int | None = None,
-        y: int | None = None,
+        x: int = 0,
+        y: int = 0,
         button: str = pydirectinput.MOUSE_PRIMARY,
         click_count: int = 1,
     ):
         """Initialize click command.
 
         Args:
-            x: X coordinate to click (uses last template location if None)
-            y: Y coordinate to click (uses last template location if None)
+            x: X offset relative to template/center location
+            y: Y offset relative to template/center location
             button: Mouse button to click (default: left button)
             click_count: Number of clicks to perform
         """
@@ -128,10 +140,9 @@ class ClickCommand(Command):
         Returns:
             CommandResult with SUCCESS status
         """
-        if self.x is not None and self.y is not None:
-            x, y = self.x, self.y
-        else:
-            x, y = context.last_template_location or context.center
+        x, y = numpy.array(
+            context.last_template_location or context.center
+        ) + numpy.array((self.x, self.y))
 
         for _ in range(self.click_count):
             pydirectinput.moveTo(x, y, attempt_pixel_perfect=True)
@@ -145,8 +156,8 @@ class DragCommand(Command):
 
     def __init__(
         self,
-        x: int | None = None,
-        y: int | None = None,
+        x: int = 0,
+        y: int = 0,
         button: str = pydirectinput.MOUSE_SECONDARY,
         drag_count: int = 1,
     ):
@@ -156,6 +167,7 @@ class DragCommand(Command):
             x: X offset to drag relative to current position
             y: Y offset to drag relative to current position
             button: Mouse button to use for dragging (default: secondary button)
+            drag_count: Number of drag operations to perform
         """
         self.x = x
         self.y = y
@@ -186,20 +198,20 @@ class LocateTemplateCommand(Command):
 
     def __init__(
         self,
-        template_id: str,
+        templates: list[str] | str,
         confidence: float = 0.8,
-        grayscale: bool = True,
+        region: tuple[int, int, int, int] | None = None,
     ):
         """Initialize template matching command.
 
         Args:
-            template_id: Name of template file (without .png extension)
+            templates: Template name(s) - single string or list of strings (without .png extension)
             confidence: Minimum confidence threshold for template matching
-            grayscale: Whether to perform matching in grayscale
+            region: Optional region to search within as (x, y, width, height)
         """
-        self.template_id = template_id
+        self.templates = [templates] if isinstance(templates, str) else templates
         self.confidence = confidence
-        self.grayscale = grayscale
+        self.region = region
 
     def execute(self, context: CommandContext) -> CommandResult:
         """
@@ -213,34 +225,48 @@ class LocateTemplateCommand(Command):
             FAILURE otherwise. On success, sets context.last_template_location to
             (screen_x, screen_y) tuple of absolute screen coordinates for template center.
         """
-        capture = context.capture
+        capture = cv2.cvtColor(context.capture, cv2.COLOR_BGR2GRAY)
         x, y = context.origin
 
-        template_path = os.path.join("templates", f"{self.template_id}.png")
-        template = cv2.imread(template_path)
-        if template is None:
-            return CommandResult(
-                CommandStatus.FAILURE, f"Could not load template: {template_path}"
+        if self.region is not None:
+            _x, _y = numpy.array(
+                context.last_template_location or context.origin
+            ) + numpy.array(self.region[:2])
+
+            start_x = max(0, _x - x)
+            start_y = max(0, _y - y)
+            end_x = min(capture.shape[1], start_x + self.region[2])
+            end_y = min(capture.shape[0], start_y + self.region[3])
+
+            capture = capture[start_y:end_y, start_x:end_x]
+            x += start_x
+            y += start_y
+
+        template_index = None
+        for template in numpy.random.permutation(self.templates):
+            result = cv2.matchTemplate(
+                capture, templates[template], cv2.TM_CCOEFF_NORMED
             )
+            _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
-        if self.grayscale:
-            capture = cv2.cvtColor(capture, cv2.COLOR_BGR2GRAY)
-            template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+            if max_val > self.confidence:
+                template_index = self.templates.index(template)
+                break
 
-        result = cv2.matchTemplate(capture, template, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
-
-        if max_val < self.confidence:
+        if template_index is None:
             return CommandResult(
                 CommandStatus.FAILURE,
-                f"Template '{self.template_id}' not found with confidence {self.confidence}",
+                f"No match for '{', '.join(self.templates)}' with confidence {self.confidence}",
             )
 
-        template_height, template_width = template.shape[:2]
+        template_height, template_width = templates[
+            self.templates[template_index]
+        ].shape[:2]
         match_x, match_y = max_loc
         screen_x = x + match_x + template_width // 2
         screen_y = y + match_y + template_height // 2
 
+        context.last_template_index = template_index
         context.last_template_location = (screen_x, screen_y)
         return CommandResult(CommandStatus.SUCCESS)
 
@@ -255,7 +281,10 @@ class ImagineClient:
         windows = pywinctl.getWindowsWithTitle(
             self.IMAGINE_CLIENT_IDENTIFIER, condition=pywinctl.Re.STARTSWITH
         )
-        self._window = windows[0]
+        try:
+            self._window = windows[0]
+        except IndexError:
+            logger.error("No IMAGINE client windows available.")
 
     @property
     def frame(self) -> tuple[int, int, int, int]:
@@ -314,20 +343,40 @@ class ImagineClient:
         self._window.activate()
 
 
-@dataclass
+class BotSelection(enum.StrEnum):
+    """Bot type selection enumeration."""
+
+    REBIRTH = enum.auto()
+
+
+@dataclasses.dataclass
+class BotConfig:
+    """Base configuration for bot instances."""
+
+    relog: bool
+    sleep_amount: float
+
+
+@dataclasses.dataclass
 class BotContext:
+    """Base context for bot instances."""
+
     pass
 
 
-class Bot[BotContextType: BotContext](ABC):
+class Bot[BotConfigType: BotConfig, BotContextType: BotContext](abc.ABC):
     """Base bot class that manages state and executes automation commands."""
 
     def __init__(
-        self, state: "State | None" = None, context: BotContextType | None = None
+        self,
+        config: BotConfigType,
+        context: BotContextType,
+        state: "State | None" = None,
     ):
         """Initialize bot with starting state and IMAGINE client reference."""
-        self.state = state
+        self.config = config
         self.context = context
+        self.state = state
         self.client = ImagineClient()
 
     def execute_commands(self, *commands: Command) -> bool:
@@ -341,11 +390,19 @@ class Bot[BotContextType: BotContext](ABC):
         Returns:
             True if all commands succeeded, False if any command failed
         """
+        success, _ = self.execute_commands_with_context(*commands)
+        return success
+
+    def execute_commands_with_context(
+        self, *commands: Command
+    ) -> tuple[bool, CommandContext]:
+        """Execute commands and return both success status and command context."""
         context = CommandContext()
         for command in commands:
-            time.sleep(0.05)
+            time.sleep(self.config.sleep_amount)
 
             if not self.client.focused:
+                logger.error("IMAGINE client window lost focus.")
                 sys.exit()
 
             context.capture = self.client.capture
@@ -354,11 +411,9 @@ class Bot[BotContextType: BotContext](ABC):
             result = command.execute(context)
 
             if result.status == CommandStatus.FAILURE:
-                logger.debug(
-                    f"FAILED: {command.__class__.__name__}{f' - {result.message}' if result.message else ''}"
-                )
-                return False
-        return True
+                logger.debug(f"Failed: {command.__class__.__name__} - {result.message}")
+                return (False, context)
+        return (True, context)
 
     def run(self) -> None:
         """Run states until None is encountered."""
@@ -379,20 +434,81 @@ class Bot[BotContextType: BotContext](ABC):
             else:
                 self.state = None
 
+            if result.message == "":
+                continue
 
-@dataclass
+            match result.status:
+                case StateStatus.FAILURE:
+                    logger.error(result.message)
+                case StateStatus.SUCCESS:
+                    logger.info(result.message)
+
+
+class RebirthPath(enum.StrEnum):
+    """Enumeration of available rebirth paths in IMAGINE."""
+
+    TIWAZ = enum.auto()
+    PEORTH = enum.auto()
+    FEHU = enum.auto()
+    EIHWAZ = enum.auto()
+    URUZ = enum.auto()
+    HAGALAZ = enum.auto()
+    LAGUZ = enum.auto()
+    ANSUZ = enum.auto()
+    NAUTHIZ = enum.auto()
+    INGWAZ = enum.auto()
+    SOWILO = enum.auto()
+    WYRD = enum.auto()
+
+
+@dataclasses.dataclass
+class RebirthBotConfig(BotConfig):
+    """Configuration for rebirth automation bot."""
+
+    end_counts: list[int]
+    end_path: RebirthPath
+
+
+@dataclasses.dataclass
 class RebirthBotContext(BotContext):
-    rebirths: list[int] | None = None
+    """Context for rebirth automation bot."""
+
+    counts: list[int] | None = None
+    path_changing: bool = False
 
 
-class RebirthBot(Bot[RebirthBotContext]):
+class RebirthBot(Bot[RebirthBotConfig, RebirthBotContext]):
     """Bot for automating rebirths."""
 
-    def __init__(self):
+    def __init__(self, config: RebirthBotConfig):
         """Initialize bot with starting state."""
-        super().__init__(state=RelogState(self), context=RebirthBotContext())
+        super().__init__(config, RebirthBotContext())
 
-    def count_rebirths(self) -> list[int] | None:
+    def next_path_index(self, counts: list[int]) -> int | None:
+        """Determine the next rebirth path index to work on."""
+        try:
+            end_path_index = list(RebirthPath).index(self.config.end_path)
+        except ValueError:
+            end_path_index = None
+
+        indices = [
+            i
+            for i, (current, target) in enumerate(zip(counts, self.config.end_counts))
+            if current < target and i != end_path_index
+        ]
+
+        if (
+            self.config.end_path is not None
+            and counts[end_path_index] < self.config.end_counts[end_path_index]
+        ):
+            indices.append(end_path_index)
+
+        try:
+            return indices[0]
+        except IndexError:
+            return None
+
+    def count_paths(self) -> list[int] | None:
         """Count the number of rebirths on each rebirth path."""
         capture = self.client.capture
 
@@ -408,10 +524,10 @@ class RebirthBot(Bot[RebirthBotContext]):
         except IndexError:
             return None
 
-        rebirths = [8] * 12
+        counts = [8] * 12
         roi_width = 162
         roi_height = 19
-        for i in range(len(rebirths)):
+        for i in range(len(counts)):
             roi_y = y + (i * roi_height)
             roi_mask = empty_slot_mask[roi_y : roi_y + roi_height, x : x + roi_width]
 
@@ -420,18 +536,18 @@ class RebirthBot(Bot[RebirthBotContext]):
             )
             empty_slots = sum(1 for contour in contours if cv2.contourArea(contour) > 0)
 
-            rebirths[i] -= empty_slots
-        return rebirths
+            counts[i] -= empty_slots
+        return counts
 
 
-class StateStatus(Enum):
+class StateStatus(enum.Enum):
     """Status enumeration for state execution results."""
 
-    SUCCESS = auto()
-    FAILURE = auto()
+    SUCCESS = enum.auto()
+    FAILURE = enum.auto()
 
 
-@dataclass
+@dataclasses.dataclass
 class StateResult:
     """Result of state execution with status and next state transition information."""
 
@@ -441,7 +557,7 @@ class StateResult:
     next_state_kwargs: dict | None = None
 
 
-class State[BotType: Bot](ABC):
+class State[BotType: Bot](abc.ABC):
     """Abstract base class for bot states."""
 
     def __init__(
@@ -457,7 +573,7 @@ class State[BotType: Bot](ABC):
         self.next_state_kwargs = next_state_kwargs
         self.max_elapsed = max_elapsed
 
-    @abstractmethod
+    @abc.abstractmethod
     def run(self, elapsed: float) -> StateResult:
         """Execute state logic.
 
@@ -479,10 +595,10 @@ class ThreadToCathedralState(State[RebirthBot]):
                 "sequence": (
                     "thread",
                     "thread_cathedral",
-                    "thread_yes",
+                    "yes",
                 ),
                 "sequence_complete": lambda: not self.bot.execute_commands(
-                    LocateTemplateCommand("thread_yes")
+                    LocateTemplateCommand("yes")
                 ),
                 "click_count": 2,
             },
@@ -555,7 +671,7 @@ class RelogState(State[Bot]):
 
 class ReloggedState(State[Bot]):
     def run(self, elapsed: float) -> StateResult:
-        if not self.bot.execute_commands(LocateTemplateCommand("minimize")):
+        if not self.bot.execute_commands(LocateTemplateCommand("player")):
             return StateResult(status=StateStatus.FAILURE, next_state=ReloggedState)
 
         return StateResult(
@@ -566,18 +682,21 @@ class ReloggedState(State[Bot]):
 
 
 class ApproachCathedralMasterState(State[RebirthBot]):
-    def __init__(self, bot: Bot):
+    def __init__(self, bot: Bot, skipped_thread: bool = False):
         super().__init__(bot, max_elapsed=5.0)
+        self.skipped_thread = skipped_thread
 
     def run(self, elapsed: float) -> StateResult:
-        if elapsed == 0:
+        if elapsed == 0 and not self.skipped_thread:
             self.bot.execute_commands(DragCommand(90, 0))
         elif elapsed >= self.max_elapsed:
-            return StateResult(StateStatus.FAILURE, next_state=ThreadToCathedralState)
+            return StateResult(
+                StateStatus.FAILURE,
+                message="Timed out approaching cathedral master. Retrying...",
+                next_state=ThreadToCathedralState,
+            )
 
-        if not self.bot.execute_commands(
-            LocateTemplateCommand("cathedral_perform_rebirth_1")
-        ):
+        if not self.bot.execute_commands(LocateTemplateCommand("perform_rebirth_1")):
             self.bot.execute_commands(ClickCommand())
             return StateResult(
                 StateStatus.FAILURE, next_state=ApproachCathedralMasterState
@@ -592,18 +711,143 @@ class CathedralMasterState(State[RebirthBot]):
             status=StateStatus.SUCCESS,
             next_state=SequenceState,
             next_state_kwargs={
-                "next_state": ThreadToCathedralState,
-                "next_state_kwargs": {"next_state": ApproachVivianState},
+                "next_state": RebirthCountState,
                 "sequence": (
-                    "cathedral_perform_rebirth_1",
-                    "cathedral_perform_rebirth_2",
-                    "cathedral_close",
-                    "cathedral_stop",
+                    "perform_rebirth_1",
+                    "perform_rebirth_2",
+                    "view_demon_information",
                 ),
                 "sequence_complete": lambda: self.bot.execute_commands(
-                    LocateTemplateCommand("minimize")
+                    LocateTemplateCommand("close_window")
                 ),
             },
+        )
+
+
+class RebirthCountState(State[RebirthBot]):
+    def run(self, elapsed: float):
+        self.bot.execute_commands(
+            LocateTemplateCommand("rebirth_tab"),
+            ClickCommand(),
+        )
+        self.bot.context.counts = self.bot.count_paths()
+
+        if self.bot.context.counts is None:
+            return StateResult(
+                StateStatus.FAILURE,
+                message="Failed to count rebirth paths. Verify the window is in view.",
+                next_state=RebirthCountState,
+            )
+
+        next_path_index = self.bot.next_path_index(self.bot.context.counts)
+
+        if next_path_index is None:
+            return StateResult(
+                StateStatus.SUCCESS,
+                message=f"Rebirths finished for paths: {','.join(map(str, self.bot.config.end_counts))} end path: {self.bot.config.end_path}",
+            )
+
+        path_index = None
+        success, context = self.bot.execute_commands_with_context(
+            LocateTemplateCommand("g_type"),
+            LocateTemplateCommand(
+                [f"path_{i}" for i in range(12)],
+                region=(32, -10, 120, 20),
+            ),
+        )
+
+        if success:
+            path_index = context.last_template_index
+        else:
+            # Demon with a weird custom growth type, get the nonzero path
+            path_index = self.bot.context.counts.index(1)
+
+        self.bot.context.path_changing = next_path_index != path_index
+        return StateResult(
+            StateStatus.SUCCESS,
+            next_state=SequenceState,
+            next_state_kwargs={
+                "next_state": RebirthState,
+                "sequence": (
+                    "close_window",
+                    "rebirth_payment",
+                    f"path_{next_path_index}",
+                ),
+                "sequence_complete": lambda: self.bot.execute_commands(
+                    LocateTemplateCommand(f"path_icon_{next_path_index}")
+                ),
+            },
+        )
+
+
+class RebirthState(State[RebirthBot]):
+    def run(self, elapsed: float):
+        self.bot.execute_commands(
+            LocateTemplateCommand("rebirth_payment"),
+            ClickCommand(),
+        )
+        next_path_index = self.bot.next_path_index(self.bot.context.counts)
+
+        # Matching templates for all possible items is unrealistic; attempt from left to right
+        for payment_item_x in (190, 150, 110, 70):
+            sequence = None
+            projected_path_index = next_path_index
+
+            if self.bot.execute_commands(
+                LocateTemplateCommand("rebirth_level_warning")
+            ):
+                sequence = ("close", "stop")
+            elif self.bot.execute_commands(
+                LocateTemplateCommand("execute", confidence=0.95)
+            ):
+                sequence = ("execute", "yes", "rebirthing")
+
+                if self.bot.context.path_changing:
+                    self.bot.context.counts[next_path_index] = max(
+                        1, self.bot.context.counts[next_path_index]
+                    )
+                else:
+                    self.bot.context.counts[next_path_index] += 1
+
+                projected_path_index = self.bot.next_path_index(self.bot.context.counts)
+
+                if projected_path_index is not None:
+                    self.bot.context.path_changing = (
+                        next_path_index != projected_path_index
+                    )
+
+            if sequence is not None:
+                result = StateResult(
+                    status=StateStatus.SUCCESS,
+                    next_state=SequenceState,
+                    next_state_kwargs={
+                        "sequence": sequence,
+                        "next_state": ThreadToCathedralState,
+                        "next_state_kwargs": {"next_state": ApproachVivianState},
+                        "sequence_complete": lambda: self.bot.execute_commands(
+                            LocateTemplateCommand("player")
+                        ),
+                    },
+                )
+
+                if projected_path_index is None or (
+                    self.bot.context.path_changing
+                    and self.bot.context.counts[projected_path_index] <= 1
+                ):
+                    result.next_state_kwargs |= {
+                        "next_state": ApproachCathedralMasterState,
+                        "next_state_kwargs": {"skipped_thread": True},
+                    }
+
+                return result
+
+            self.bot.execute_commands(
+                LocateTemplateCommand("rebirth_payment"),
+                ClickCommand(-payment_item_x, 60),
+                ClickCommand(),
+            )
+        return StateResult(
+            StateStatus.FAILURE, message="Insufficient macca and/or rebirth items."
         )
 
 
@@ -620,6 +864,7 @@ class ApproachVivianState(State[RebirthBot]):
         elif elapsed >= self.max_elapsed:
             return StateResult(
                 StateStatus.FAILURE,
+                message="Timed out approaching Vivian. Retrying...",
                 next_state=ThreadToCathedralState,
                 next_state_kwargs={"next_state": ApproachVivianState},
             )
@@ -633,6 +878,13 @@ class ApproachVivianState(State[RebirthBot]):
 
 class VivianState(State[RebirthBot]):
     def run(self, elapsed: float) -> StateResult:
+        next_count = self.bot.context.counts[
+            self.bot.next_path_index(self.bot.context.counts)
+        ]
+
+        if self.bot.context.path_changing:
+            next_count -= 1
+
         return StateResult(
             status=StateStatus.SUCCESS,
             next_state=SequenceState,
@@ -640,10 +892,10 @@ class VivianState(State[RebirthBot]):
                 "next_state": ThreadToCathedralState,
                 "sequence": (
                     "vivian_demon_level",
-                    "dialogue_end_conversation",
+                    f"vivian_demon_level_{next_count - 1}",
                 ),
                 "sequence_complete": lambda: self.bot.execute_commands(
-                    LocateTemplateCommand("minimize")
+                    LocateTemplateCommand("player")
                 ),
             },
         )
@@ -654,7 +906,7 @@ class SequenceState(State[Bot]):
         self,
         bot: Bot,
         sequence: tuple[str],
-        sequence_complete: Callable[[], bool] = lambda: False,
+        sequence_complete: collections.abc.Callable[[], bool] = lambda: False,
         index: int = 0,
         click_count: int = 1,
         next_state: State | None = None,
@@ -703,9 +955,47 @@ class SequenceState(State[Bot]):
         )
 
 
-if __name__ == "__main__":
-    logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s")
+def parse_dotenv_value(value: str) -> str | float | bool | list[int]:
+    """Parse environment value to appropriate type."""
+    try:
+        return float(value)
+    except ValueError:
+        try:
+            return [int(delimited) for delimited in value.split(",")]
+        except ValueError:
+            if value.casefold() in ("true", "false"):
+                return value.casefold() == "true"
 
-    bot = RebirthBot()
-    bot.state = ReloggedState(bot)
+            return value if value != "" else None
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+
+    config = {}
+    for key, value in dotenv.dotenv_values().items():
+        match = re.match(r"(?i)IMAGINATION_(\w*BOT)(?:_(\w+))?$", key)
+
+        if match is None:
+            continue
+
+        bot_key, bot_subkey = match.groups()
+        parsed_value = parse_dotenv_value(value)
+
+        if bot_subkey is None:
+            selection = BotSelection(parsed_value)
+        elif re.match(r"(?i)(%s_)?BOT" % selection, bot_key):
+            config[bot_subkey.casefold()] = parsed_value
+
+    match selection:
+        case BotSelection.REBIRTH:
+            bot = RebirthBot(RebirthBotConfig(**config))
+
+    if bot.config.relog:
+        bot.state = RelogState(bot)
+    else:
+        bot.state = ResetUIState(bot, next_state=ResetCameraState)
+
     bot.run()
