@@ -1,6 +1,8 @@
 tests/
 notes/
+output/
 __pycache__/
 *.pyc
 *.pyo
 *.env
+*.webm

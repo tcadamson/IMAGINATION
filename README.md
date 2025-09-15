@@ -1,8 +1,15 @@
-# Rebirth Bot
+# IMAGINATION
 
-**IMPORTANT:** Please replace the file ".env.example" with a copy named ".env" and make any changes there. This is the actual configuration file the bot will read from.
+IMAGINE automation :)
 
-## Prerequisites
+**IMPORTANT:** All bots are configured via the `_internal/.env` file.
+
+- To force stop a bot, make the window lose focus e.g. windows key, alt-tab, alt-esc.
+- If you encounter any issues or crashes, run `_internal/debug.bat` and share the console output.
+
+## Rebirth Bot
+
+### Prerequisites
 
 - Have the demon summoned and unlocked.
 - Have a thread in your inventory or the skill version on your hotbar.
@@ -15,7 +22,6 @@
 
 - Equip any XP gear and use your x10 demon incense BEFORE starting the bot.
 
-## Notes
-- Mitama fusion is not handled by the bot yet. For now, just run the bot again after fusing and re-summoning (don't forget to edit REBIRTH_BOT_END_COUNTS in .env if you're doing r4/r8, for example).
-- The bot makes use of "close all" in "key config" > "opening and closing windows" > "special windows functions" using shift-c (not bound by default). If you don't bind that, make sure no windows are covering the center pixel of the client window.
-- To force stop, make the window lose focus e.g. windows key, alt-tab, alt-esc. You can restart the bot to continue where you left off.
+### Notes
+- Mitama fusion is not handled by the bot yet. For now, just run the bot again after fusing and re-summoning (don't forget to edit `IMAGINATION_REBIRTH_BOT_END_COUNTS` in `_internal/.env` if you're doing r4/r8, for example).
+- The bot makes use of "close all" in "key config" > "opening and closing windows" > "special windows functions" using shift-c (not bound by default). If you don't bind that, make sure no in-game windows are covering the center pixel of the client.

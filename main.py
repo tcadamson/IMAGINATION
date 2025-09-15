@@ -12,6 +12,7 @@ import dataclasses
 import enum
 import logging
 import os
+import pathlib
 import re
 import sys
 import time
@@ -28,12 +29,15 @@ pydirectinput.PAUSE = 0.06
 
 logger = logging.getLogger(__name__)
 
+# Root directory visible to PyInstaller
+root = pathlib.Path(__file__).resolve().parent
+
 # Load and cache the grayscale templates ahead of time to improve performance of LocateTemplateCommand
 templates = {
     os.path.splitext(filename)[0]: cv2.cvtColor(
-        cv2.imread(os.path.join("templates", filename)), cv2.COLOR_BGR2GRAY
+        cv2.imread(str(root / "templates" / filename)), cv2.COLOR_BGR2GRAY
     )
-    for filename in os.listdir("templates")
+    for filename in os.listdir(root / "templates")
     if filename.endswith(".png")
 }
 
@@ -266,8 +270,8 @@ class LocateTemplateCommand(Command):
         screen_x = x + match_x + template_width // 2
         screen_y = y + match_y + template_height // 2
 
-        context.last_template_index = template_index
         context.last_template_location = (screen_x, screen_y)
+        context.last_template_index = template_index
         return CommandResult(CommandStatus.SUCCESS)
 
 
@@ -975,7 +979,7 @@ if __name__ == "__main__":
     )
 
     config = {}
-    for key, value in dotenv.dotenv_values().items():
+    for key, value in dotenv.dotenv_values(root / ".env").items():
         match = re.match(r"(?i)IMAGINATION_(\w*BOT)(?:_(\w+))?$", key)
 
         if match is None:
