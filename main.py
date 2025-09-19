@@ -605,7 +605,6 @@ class State[BotType: Bot](abc.ABC):
 
 class ThreadToCathedralState(State[RebirthBot]):
     def run(self, elapsed: float) -> StateResult:
-        self.bot.execute_commands(HotkeyCommand("esc"))
         return StateResult(
             status=StateStatus.SUCCESS,
             next_state=SequenceState,
