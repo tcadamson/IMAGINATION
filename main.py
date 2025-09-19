@@ -205,6 +205,7 @@ class LocateTemplateCommand(Command):
         templates: list[str] | str,
         confidence: float = 0.8,
         region: tuple[int, int, int, int] | None = None,
+        debug: bool = False,
     ):
         """Initialize template matching command.
 
@@ -212,10 +213,12 @@ class LocateTemplateCommand(Command):
             templates: Template name(s) - single string or list of strings (without .png extension)
             confidence: Minimum confidence threshold for template matching
             region: Optional region to search within as (x, y, width, height)
+            debug: Log location and confidence data for all possible matches of the template
         """
         self.templates = [templates] if isinstance(templates, str) else templates
         self.confidence = confidence
         self.region = region
+        self.debug = debug
 
     def execute(self, context: CommandContext) -> CommandResult:
         """
@@ -253,6 +256,19 @@ class LocateTemplateCommand(Command):
             )
             _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
+            if self.debug:
+                matches = []
+                for location in zip(*numpy.where(result >= self.confidence)[::-1]):
+                    confidence = result[location[1], location[0]]
+                    matches.append((location, confidence))
+
+                matches.sort(key=lambda location: location[1], reverse=True)
+
+                for i, (location, confidence) in enumerate(matches):
+                    logger.debug(
+                        f"{self.__class__.__name__} - '{template}' location {i + 1}: {location} confidence: {confidence:.3f}"
+                    )
+
             if max_val > self.confidence:
                 template_index = self.templates.index(template)
                 break
@@ -260,7 +276,7 @@ class LocateTemplateCommand(Command):
         if template_index is None:
             return CommandResult(
                 CommandStatus.FAILURE,
-                f"No match for '{', '.join(self.templates)}' with confidence {self.confidence}",
+                f"No match for '{', '.join(self.templates)}' with confidence: {self.confidence}",
             )
 
         template_height, template_width = templates[
