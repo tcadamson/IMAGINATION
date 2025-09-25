@@ -1,12 +1,11 @@
-# IMAGINATION
-
-IMAGINE automation :D
+# IMAGINATION: Imagine Automation :D
 
 **IMPORTANT:** All bots are configured via the `_internal/.env` file.
 
 - To force stop a bot, make the window lose focus, e.g. windows key, alt+tab, alt+esc.
 - If you encounter any issues or crashes, please send me your `_internal/debug.log` file.
-- Please ensure the below bar is not obstructed by any in-game windows, as well as the center pixel of the client.
+- Please ensure the below bar is not obstructed by any in-game windows, as well as your thread and the center pixel of the client.
+  - Unfortunately, if this bar is at the top of the screen, the tooltip may obscure some necessary templates. For now, please move it to the bottom prior to running a bot.
 
 ![Bar](https://external-content.duckduckgo.com/iu/?u=https://drive.google.com/uc?id=1V54-CUXLqMKLJBsZ58GY04wGli3VAEeF)
 
@@ -34,3 +33,14 @@ The bot will handle mitama fusion and post-mitama rebirths for you.
 ### Notes
 - If you need to stop and resume the bot, that's okay, it will pick up where it left off.
 - If x10 demon incense and/or hustle drinks are present in your inventory, the bot will refresh these every 29 minutes of continuous operation.
+- You may configure a cathedral location to always thread to via `IMAGINATION_REBIRTH_BOT_CATHEDRAL_LOCATION`
+
+## Demon Force Bot
+
+### Prerequisites
+- Have the demon summoned.
+- Have demon force items in your inventory.
+
+### Notes
+- The bot only recognizes sands (all varieties) and loops, prioritizing sands over loops.
+- At this time there is no filtering logic, it will simply bring up the discard menu and wait for you to make a decision before continuing.
