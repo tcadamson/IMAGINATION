@@ -24,15 +24,17 @@ import numpy
 import pydirectinput
 import pywinctl
 
-# Global delay between each pydirectinput call
-pydirectinput.PAUSE = 0.06
-
 logger = logging.getLogger(__name__)
 
-# Root directory visible to PyInstaller
-root = pathlib.Path(__file__).resolve().parent
+pydirectinput.PAUSE = 0.06
+pydirectinput.FAILSAFE = False
 
-# Load and cache the grayscale templates ahead of time to improve performance of LocateTemplateCommand
+if getattr(sys, "frozen", False):
+    root = pathlib.Path(sys.executable).parent
+else:
+    root = pathlib.Path(__file__).resolve().parent
+
+# Load and cache templates in grayscale ahead of time to improve performance of LocateTemplateCommand
 template_cache = {
     os.path.splitext(filename)[0]: cv2.cvtColor(
         cv2.imread(str(root / "templates" / filename)), cv2.COLOR_BGR2GRAY
@@ -44,9 +46,8 @@ template_cache = {
 # The first time a template is matched, its region is cached
 template_region_cache = {}
 
-demon_force_items = ("sands_0", "sands_1", "loop")
-
 # Exceptions for templates reused in different contexts or with multiple known possible locations
+demon_force_items = ("sands_0", "sands_1", "loop")
 template_region_cache_blacklist = (
     (
         "yes",
@@ -147,6 +148,7 @@ class ClickCommand(Command):
             y: Y offset relative to template/center location
             button: Mouse button to click (default: left button)
             pause: Apply pydirectinput.PAUSE
+            reset_cursor: Move cursor to center of client after click to remove unwanted tooltips
             click_count: Number of clicks to perform
         """
         self.x = x
@@ -220,7 +222,8 @@ class DragCommand(Command):
         """
         center_x, center_y = context.center
         for _ in range(self.drag_count):
-            pydirectinput.moveTo(center_x, center_y, attempt_pixel_perfect=True)
+            while pydirectinput.position() != context.center:
+                pydirectinput.moveTo(center_x, center_y, attempt_pixel_perfect=True)
             pydirectinput.mouseDown(button=pydirectinput.MOUSE_SECONDARY)
             pydirectinput.moveTo(
                 center_x + self.x,
@@ -261,7 +264,7 @@ class LocateTemplateCommand(Command):
         """Initialize template matching command.
 
         Args:
-            templates: Template name(s) - single string or list of strings (without .png extension)
+            templates: Collection of templates to attempt to match (or a single template string)
             confidence: Minimum confidence threshold for template matching
             region: Optional region to search within as (x, y, width, height)
             debug: Log location and confidence data for all possible matches of the template
@@ -282,8 +285,8 @@ class LocateTemplateCommand(Command):
 
         Returns:
             CommandResult with SUCCESS if template found above confidence threshold,
-            FAILURE otherwise. On success, sets context.last_template_location to
-            (screen_x, screen_y) tuple of absolute screen coordinates for template center.
+            FAILURE otherwise. On success, sets context.last_template_location to the absolute
+            screen coordinates of the center of the template.
         """
         capture = cv2.cvtColor(context.capture, cv2.COLOR_BGR2GRAY)
         x, y = context.origin
@@ -328,10 +331,7 @@ class LocateTemplateCommand(Command):
                 break
 
         if template_index is None:
-            return CommandResult(
-                CommandStatus.FAILURE,
-                f"No match for '{', '.join(self.templates)}' with confidence: {self.confidence}",
-            )
+            return CommandResult(CommandStatus.FAILURE)
 
         template = self.templates[template_index]
         template_width, template_height = template_cache[template].shape[:2][::-1]
@@ -359,7 +359,10 @@ class LocateTemplateCommand(Command):
             template_region_cache[template] = region
             logger.info(f"Cached '{template}' with region: {region}")
 
-        return CommandResult(CommandStatus.SUCCESS)
+        return CommandResult(
+            CommandStatus.SUCCESS,
+            message=f"Matched '{template}' with confidence: {max_val:.3f}",
+        )
 
 
 class ImagineClient:
@@ -447,6 +450,7 @@ class BotConfig:
 
     relog: bool
     sleep_amount: float
+    pre_drag_sleep_amount: float
 
 
 @dataclasses.dataclass
@@ -505,11 +509,27 @@ class Bot[BotConfigType: BotConfig, BotContextType: BotContext](abc.ABC):
             context.capture = self.client.capture
             context.origin = (self.client.x, self.client.y)
             context.center = (self.client.center_x, self.client.center_y)
+
+            if (
+                isinstance(command, DragCommand)
+                and self.config.pre_drag_sleep_amount is not None
+            ):
+                time.sleep(self.config.pre_drag_sleep_amount)
+
             result = command.execute(context)
 
+            message = (
+                f"%s: {command.__class__.__name__} - {result.message}"
+                if result.message
+                else None
+            )
+
+            if message is not None:
+                logger.debug(message % result.status.name)
+
             if result.status == CommandStatus.FAILURE:
-                logger.debug(f"Failed: {command.__class__.__name__} - {result.message}")
                 return (False, context)
+
         return (True, context)
 
     def run(self) -> None:
@@ -835,7 +855,8 @@ class DemonForceState(State[DemonForceBot]):
         self.bot.execute_commands(
             LocateTemplateCommand("demon_force_disable_confirmation"),
             ClickCommand(),
-            LocateTemplateCommand(demon_force_items),
+            LocateTemplateCommand("demon_force_window"),
+            LocateTemplateCommand(demon_force_items, region=(-92, 75, 370, 200)),
             ClickCommand(),
             LocateTemplateCommand("demon_force_effect"),
             ClickCommand(),
@@ -1208,7 +1229,6 @@ class ApproachVivianState(State[RebirthBot]):
                     logger.info("Refreshed x10 demon incense.")
                 else:
                     logger.info(f"Couldn't locate x10 demon incense to refresh.")
-
         elif elapsed >= self.max_elapsed:
             return StateResult(
                 StateStatus.FAILURE,
@@ -1378,30 +1398,33 @@ if __name__ == "__main__":
         handlers=[logging.FileHandler(root / "debug.log"), logging.StreamHandler()],
     )
 
-    config = {}
-    for key, value in dotenv.dotenv_values(root / ".env").items():
-        match = re.match(r"(?i)IMAGINATION_(\w*BOT)(?:_(\w+))?$", key)
+    try:
+        config = {}
+        for key, value in dotenv.dotenv_values(root / ".env").items():
+            match = re.match(r"(?i)IMAGINATION_(\w*BOT)(?:_(\w+))?$", key)
 
-        if match is None:
-            continue
+            if match is None:
+                continue
 
-        bot_key, bot_subkey = match.groups()
-        parsed_value = parse_dotenv_value(value)
+            bot_key, bot_subkey = match.groups()
+            parsed_value = parse_dotenv_value(value)
 
-        if bot_subkey is None:
-            selection = BotSelection(parsed_value)
-        elif re.match(r"(?i)(%s_)?BOT" % selection, bot_key):
-            config[bot_subkey.casefold()] = parsed_value
+            if bot_subkey is None:
+                selection = BotSelection(parsed_value)
+            elif re.match(r"(?i)(%s_)?BOT" % selection, bot_key):
+                config[bot_subkey.casefold()] = parsed_value
 
-    match selection:
-        case BotSelection.REBIRTH:
-            bot = RebirthBot(RebirthBotConfig(**config))
-        case BotSelection.DEMON_FORCE:
-            bot = DemonForceBot(BotConfig(**config), BotContext())
+        match selection:
+            case BotSelection.REBIRTH:
+                bot = RebirthBot(RebirthBotConfig(**config))
+            case BotSelection.DEMON_FORCE:
+                bot = DemonForceBot(BotConfig(**config), BotContext())
 
-    if bot.config.relog:
-        bot.state = RelogState(bot)
-    else:
-        bot.state = ReloggedState(bot)
+        if bot.config.relog:
+            bot.state = RelogState(bot)
+        else:
+            bot.state = ReloggedState(bot)
 
-    bot.run()
+        bot.run()
+    except Exception:
+        logger.exception(f"Fatal exception:", exc_info=True)

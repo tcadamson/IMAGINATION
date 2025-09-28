@@ -1,6 +1,6 @@
 tests/
 notes/
-output/
+build/
 __pycache__/
 *.pyc
 *.pyo
