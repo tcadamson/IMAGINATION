@@ -5,7 +5,6 @@
 - To force stop a bot, make the window lose focus, e.g. windows key, alt+tab, alt+esc.
 - If you encounter any issues or crashes, please send me your `_internal/debug.log` file.
 - Please ensure the below bar is not obstructed by any in-game windows, as well as your thread and the center pixel of the client.
-  - Unfortunately, if this bar is at the top of the screen, the tooltip may obscure some necessary templates. For now, please move it to the bottom prior to running a bot.
 
 ![Bar](https://external-content.duckduckgo.com/iu/?u=https://drive.google.com/uc?id=1V54-CUXLqMKLJBsZ58GY04wGli3VAEeF)
 
