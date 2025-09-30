@@ -9,6 +9,9 @@
 
 ![Bar](https://external-content.duckduckgo.com/iu/?u=https://drive.google.com/uc?id=1V54-CUXLqMKLJBsZ58GY04wGli3VAEeF)
 
+- If the mouse isn't dragging the camera properly, you will need to increase the `IMAGINATION_BOT_SLEEP_AMOUNT` in `.env` until it behaves correctly and consistently.
+- It is normal and expected for the bot to start slow and then increase speed as it operates; this is the template caching at work.
+
 ## Rebirth Bot
 
 ### Prerequisites
@@ -44,4 +47,5 @@ The bot will handle mitama fusion and post-mitama rebirths for you.
 
 ### Notes
 - The bot only recognizes sands (all varieties) and loops, prioritizing sands over loops.
-- At this time there is no filtering logic, it will simply bring up the discard menu and wait for you to make a decision before continuing.
+  - At this time, for sands specifically, you need the exact amounts for filling each force parameter. Otherwise, it may continue trying to select that sands item and failing.
+- At this time, there is no filtering logic, it will simply bring up the discard menu and wait for you to make a decision before continuing.
