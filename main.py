@@ -380,6 +380,7 @@ class ImagineClient:
             self._window = windows[0]
         except IndexError:
             logger.error("No IMAGINE client windows available.")
+            sys.exit()
 
     @property
     def frame(self) -> tuple[int, int, int, int]:
