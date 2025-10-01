@@ -281,7 +281,6 @@ class LocateTemplateCommand(Command):
             FAILURE otherwise. On success, sets context.last_template_location to the absolute
             screen coordinates of the center of the template.
         """
-        capture = cv2.cvtColor(context.capture, cv2.COLOR_BGR2GRAY)
         x, y = context.origin
 
         template_index = None
@@ -299,10 +298,17 @@ class LocateTemplateCommand(Command):
                     context, template_region_cache[template], (0, 0)
                 )
             else:
-                y1, y2, x1, x2 = (0, capture.shape[0], 0, capture.shape[1])
+                y1, y2, x1, x2 = (
+                    0,
+                    context.capture.shape[0],
+                    0,
+                    context.capture.shape[1],
+                )
 
             result = cv2.matchTemplate(
-                capture[y1:y2, x1:x2], template_cache[template], cv2.TM_CCOEFF_NORMED
+                cv2.cvtColor(context.capture[y1:y2, x1:x2], cv2.COLOR_BGR2GRAY),
+                template_cache[template],
+                cv2.TM_CCOEFF_NORMED,
             )
             _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
