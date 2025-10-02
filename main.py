@@ -35,6 +35,7 @@ else:
     root = pathlib.Path(__file__).resolve().parent
 
 # Load and cache templates in grayscale ahead of time to improve performance of LocateTemplateCommand
+template_region_cache = {}
 template_cache = {
     os.path.splitext(filename)[0]: cv2.cvtColor(
         cv2.imread(str(root / "templates" / filename)), cv2.COLOR_BGR2GRAY
@@ -43,21 +44,20 @@ template_cache = {
     if filename.endswith(".png")
 }
 
-# The first time a template is matched, its region is cached
-template_region_cache = {}
-
-# Exceptions for templates reused in different contexts or with multiple known possible locations
 demon_force_items = ("sands_0", "sands_1", "loop")
-template_region_cache_blacklist = (
-    (
-        "incense",
-        "yes",
-        "close",
-        "close_window",
-    )
-    + tuple(f"path_{i}" for i, _ in enumerate("RebirthPath"))
-    + demon_force_items
-)
+
+
+# Templates that may appear in different contexts/locations need to be parameterized
+class CacheParameter(enum.StrEnum):
+    PATH_G_TYPE = enum.auto()
+    PATH_REBIRTH = enum.auto()
+    YES_FUSION = enum.auto()
+    YES_REBIRTH = enum.auto()
+    YES_THREAD = enum.auto()
+    CLOSE_DEMON_FORCE = enum.auto()
+    CLOSE_REBIRTH = enum.auto()
+    CLOSE_WINDOW_FUSION = enum.auto()
+    CLOSE_WINDOW_REBIRTH = enum.auto()
 
 
 class CommandStatus(enum.Enum):
@@ -162,6 +162,19 @@ class ClickCommand(Command):
         if context.last_template_location is not None:
             self.x, self.y = numpy.array(context.last_template_location) + numpy.array(
                 (self.x, self.y)
+            )
+
+        # Absolutely do not get stuck clicking out of the client in a while loop, can you IMAGINE?
+        right, bottom = numpy.array(context.origin) + numpy.array(
+            context.capture.shape[:2][::-1]
+        )
+        if not (
+            context.origin[0] <= self.x <= right
+            and context.origin[1] <= self.y <= bottom
+        ):
+            return CommandResult(
+                CommandStatus.FAILURE,
+                message=f"Attempted to click out of client bounds: ({self.x}, {self.y})",
             )
 
         move_to_wrapper(self.x, self.y, attempt_pixel_perfect=True)
@@ -284,18 +297,19 @@ class LocateTemplateCommand(Command):
         x, y = context.origin
 
         template_index = None
+        template_cache_key = None
         for template in (
             numpy.random.permutation(self.templates)
             if self.permutate
             else self.templates
         ):
-            if self.region is not None:
-                y1, y2, x1, x2 = capture_subset(
-                    context, self.region, context.last_template_location
-                )
-            elif template in template_region_cache:
+            if template in template_region_cache:
                 y1, y2, x1, x2 = capture_subset(
                     context, template_region_cache[template], (0, 0)
+                )
+            elif self.region is not None:
+                y1, y2, x1, x2 = capture_subset(
+                    context, self.region, context.last_template_location
                 )
             else:
                 y1, y2, x1, x2 = (
@@ -305,9 +319,10 @@ class LocateTemplateCommand(Command):
                     context.capture.shape[1],
                 )
 
+            template_cache_key = template.split("?")[0]
             result = cv2.matchTemplate(
                 cv2.cvtColor(context.capture[y1:y2, x1:x2], cv2.COLOR_BGR2GRAY),
-                template_cache[template],
+                template_cache[template_cache_key],
                 cv2.TM_CCOEFF_NORMED,
             )
             _, max_val, _, max_loc = cv2.minMaxLoc(result)
@@ -333,7 +348,7 @@ class LocateTemplateCommand(Command):
             return CommandResult(CommandStatus.FAILURE)
 
         template = self.templates[template_index]
-        template_width, template_height = template_cache[template].shape[:2][::-1]
+        template_height, template_width = template_cache[template_cache_key].shape[:2]
         match_x, match_y = max_loc
         x += x1 + match_x + template_width // 2
         y += y1 + match_y + template_height // 2
@@ -342,7 +357,7 @@ class LocateTemplateCommand(Command):
         context.last_template_index = template_index
 
         if template not in (
-            template_region_cache.keys() | template_region_cache_blacklist
+            template_region_cache.keys() | (("incense",) + demon_force_items)
         ):
             region = (
                 x - template_width // 2,
@@ -662,7 +677,7 @@ class RebirthBot(Bot[RebirthBotConfig, RebirthBotContext]):
 
         try:
             # Origin coordinate (uppermost, leftmost border pixel)
-            x, y = numpy.argwhere(border_mask > 0)[0][::-1]
+            y, x = numpy.argwhere(border_mask > 0)[0]
         except IndexError:
             return None
 
@@ -744,7 +759,7 @@ class RelogState(State[Bot]):
                     "start_game",
                 ),
                 "sequence_complete": lambda: self.bot.execute_commands(
-                    LocateTemplateCommand(("hotbar", "info"))
+                    LocateTemplateCommand(("info", "hotbar"))
                 ),
             },
         )
@@ -821,7 +836,7 @@ class InitiateDemonForceState(State[DemonForceBot]):
             ClickCommand(),
         )
 
-        if self.bot.execute_commands(LocateTemplateCommand("demon_force_tab")):
+        if not self.bot.execute_commands(LocateTemplateCommand("perform_demon_force")):
             return StateResult(
                 StateStatus.FAILURE, message="Please unlock demon force."
             )
@@ -832,13 +847,12 @@ class InitiateDemonForceState(State[DemonForceBot]):
 class DemonForceState(State[DemonForceBot]):
     def run(self, elapsed):
         self.bot.execute_commands(
-            LocateTemplateCommand("perform_demon_force"),
-            ClickCommand(),
+            LocateTemplateCommand("perform_demon_force"), ClickCommand()
         )
-
-        if not self.bot.execute_commands(LocateTemplateCommand("demon_force_window")):
-            return StateResult(StateStatus.FAILURE, next_state=DemonForceState)
-
+        while not self.bot.execute_commands(
+            LocateTemplateCommand("demon_force_window")
+        ):
+            continue
         empty_slot = tuple(f"demon_force_empty_slot_{i}" for i in range(2))
 
         if not self.bot.execute_commands(LocateTemplateCommand(empty_slot)):
@@ -850,18 +864,6 @@ class DemonForceState(State[DemonForceBot]):
                 continue
 
         demon_force_items_region = (-92, 75, 370, 200)
-        self.bot.execute_commands(
-            LocateTemplateCommand("demon_force_disable_confirmation"),
-            ClickCommand(),
-            LocateTemplateCommand("demon_force_window"),
-            LocateTemplateCommand(demon_force_items, region=demon_force_items_region),
-            ClickCommand(),
-            LocateTemplateCommand("demon_force_effect"),
-            ClickCommand(),
-            LocateTemplateCommand("use"),
-            ClickCommand(click_count=100, pause=False),
-            WaitCommand(0.2),
-        )
 
         if not self.bot.execute_commands(
             LocateTemplateCommand("demon_force_window"),
@@ -871,15 +873,31 @@ class DemonForceState(State[DemonForceBot]):
                 StateStatus.FAILURE,
                 message="Demon force items exhausted or not present.",
             )
-        else:
+
+        self.bot.execute_commands(
+            LocateTemplateCommand("demon_force_window"),
+            LocateTemplateCommand(demon_force_items, region=demon_force_items_region),
+            ClickCommand(),
+            LocateTemplateCommand("demon_force_effect", confidence=0.99),
+            ClickCommand(),
+            LocateTemplateCommand("demon_force_disable_confirmation"),
+            ClickCommand(),
+            LocateTemplateCommand("use"),
+            ClickCommand(click_count=100, pause=False),
+        )
+        while not self.bot.execute_commands(
+            LocateTemplateCommand("demon_force_full_slot")
+        ):
+            continue
+        while not self.bot.execute_commands(LocateTemplateCommand(("info", "hotbar"))):
             self.bot.execute_commands(
                 LocateTemplateCommand("demon_force_window"),
-                LocateTemplateCommand("close", region=(220, 335, 60, 30)),
+                LocateTemplateCommand(
+                    f"close?{CacheParameter.CLOSE_DEMON_FORCE}",
+                    region=(220, 335, 60, 30),
+                ),
                 ClickCommand(),
             )
-
-        while not self.bot.execute_commands(LocateTemplateCommand(("hotbar", "info"))):
-            continue
         return StateResult(StateStatus.SUCCESS, next_state=DemonForceState)
 
 
@@ -965,9 +983,11 @@ class RebirthCountState(State[RebirthBot]):
                 return StateResult(StateStatus.SUCCESS, message="Rebirths complete.")
 
             self.bot.execute_commands(
-                LocateTemplateCommand("close_window"),
+                LocateTemplateCommand(
+                    f"close_window?{CacheParameter.CLOSE_WINDOW_REBIRTH}"
+                ),
                 ClickCommand(),
-                LocateTemplateCommand("close"),
+                LocateTemplateCommand(f"close?{CacheParameter.CLOSE_REBIRTH}"),
                 ClickCommand(),
             )
             return StateResult(
@@ -981,7 +1001,7 @@ class RebirthCountState(State[RebirthBot]):
                     },
                     "sequence": ("dialogue_stop",),
                     "sequence_complete": lambda: self.bot.execute_commands(
-                        LocateTemplateCommand(("hotbar", "info"))
+                        LocateTemplateCommand(("info", "hotbar"))
                     ),
                 },
             )
@@ -990,7 +1010,10 @@ class RebirthCountState(State[RebirthBot]):
         success, context = self.bot.execute_commands_with_context(
             LocateTemplateCommand("g_type"),
             LocateTemplateCommand(
-                tuple(f"path_{i}" for i, _ in enumerate(RebirthPath)),
+                tuple(
+                    f"path_{i}?{CacheParameter.PATH_G_TYPE}"
+                    for i, _ in enumerate(RebirthPath)
+                ),
                 region=self.bot.TYPE_REGION,
                 permutate=True,
             ),
@@ -1004,12 +1027,17 @@ class RebirthCountState(State[RebirthBot]):
 
         self.bot.context.path_changing = next_path_index != path_index
         self.bot.execute_commands(
-            LocateTemplateCommand("close_window"),
+            LocateTemplateCommand(
+                f"close_window?{CacheParameter.CLOSE_WINDOW_REBIRTH}"
+            ),
             ClickCommand(),
         )
         while not self.bot.execute_commands(
             LocateTemplateCommand("rebirth_window"),
-            LocateTemplateCommand(f"path_{next_path_index}", region=(-60, 0, 60, 265)),
+            LocateTemplateCommand(
+                f"path_{next_path_index}?{CacheParameter.PATH_REBIRTH}",
+                region=(-60, 0, 60, 265),
+            ),
             ClickCommand(),
             LocateTemplateCommand(f"path_icon_{next_path_index}"),
             LocateTemplateCommand("rebirth_payment"),
@@ -1032,7 +1060,7 @@ class RebirthState(State[RebirthBot]):
                 LocateTemplateCommand("rebirth_level_warning")
             ):
                 self.bot.execute_commands(
-                    LocateTemplateCommand("close"),
+                    LocateTemplateCommand(f"close?{CacheParameter.CLOSE_REBIRTH}"),
                     ClickCommand(),
                 )
                 sequence = ("dialogue_stop",)
@@ -1043,7 +1071,7 @@ class RebirthState(State[RebirthBot]):
                     LocateTemplateCommand("execute"),
                     ClickCommand(),
                 )
-                sequence = ("yes", "rebirthing")
+                sequence = (f"yes?{CacheParameter.YES_REBIRTH}", "rebirthing")
 
                 if self.bot.context.path_changing:
                     self.bot.context.counts[next_path_index] = max(
@@ -1068,7 +1096,7 @@ class RebirthState(State[RebirthBot]):
                         "next_state": ThreadToCathedralState,
                         "next_state_kwargs": {"next_state": ApproachVivianState},
                         "sequence_complete": lambda: self.bot.execute_commands(
-                            LocateTemplateCommand(("hotbar", "info"))
+                            LocateTemplateCommand(("info", "hotbar"))
                         ),
                     },
                 )
@@ -1103,7 +1131,9 @@ class FusionDialogueState(State[RebirthBot]):
                 "next_state": FusionState,
                 "sequence": ("dialogue_double_fusion",),
                 "sequence_complete": lambda: self.bot.execute_commands(
-                    LocateTemplateCommand("close_window")
+                    LocateTemplateCommand(
+                        f"close_window?{CacheParameter.CLOSE_WINDOW_FUSION}"
+                    )
                 ),
             },
         )
@@ -1113,7 +1143,10 @@ class FusionState(State[RebirthBot]):
     def run(self, elapsed):
         if not self.bot.execute_commands(LocateTemplateCommand("summoned_demon")):
             self.bot.execute_commands(
-                LocateTemplateCommand("close_window"), ClickCommand()
+                LocateTemplateCommand(
+                    f"close_window?{CacheParameter.CLOSE_WINDOW_FUSION}"
+                ),
+                ClickCommand(),
             )
             while not self.bot.execute_commands(
                 LocateTemplateCommand("demon_list_window"), ClickCommand()
@@ -1151,7 +1184,7 @@ class FusionState(State[RebirthBot]):
                 "next_state": FusionState,
                 "sequence": (
                     "rebirthing",
-                    "yes",
+                    f"yes?{CacheParameter.YES_FUSION}",
                     "rebirthing",
                 ),
                 "sequence_complete": lambda: self.bot.execute_commands(
@@ -1277,7 +1310,7 @@ class VivianState(State[RebirthBot]):
                     f"dialogue_demon_level_{next_count - 1}",
                 ),
                 "sequence_complete": lambda: self.bot.execute_commands(
-                    LocateTemplateCommand(("hotbar", "info"))
+                    LocateTemplateCommand(("info", "hotbar"))
                 ),
             },
         )
@@ -1308,7 +1341,8 @@ class ThreadToCathedralState(State[RebirthBot]):
         if not cached:
             last_template_location = tuple(context.last_template_location)
             success, context = self.bot.execute_commands_with_context(
-                LocateTemplateCommand("hotbar"),
+                # TODO: Replace hotbar template (as seen in babel cathedral, it can potentially be affected by shaders)
+                LocateTemplateCommand("hotbar", confidence=0.8),
                 LocateTemplateCommand("thread", region=(-460, -30, 445, 75)),
             )
 
@@ -1318,7 +1352,7 @@ class ThreadToCathedralState(State[RebirthBot]):
                 self.bot.execute_commands(ClickCommand(x, y))
 
         self.bot.execute_commands(ClickCommand(x, y))
-        while not self.bot.execute_commands(LocateTemplateCommand("thread_cathedral")):
+        while not self.bot.execute_commands(LocateTemplateCommand("warp")):
             continue
         commands = (
             LocateTemplateCommand("thread_cathedral"),
@@ -1337,10 +1371,11 @@ class ThreadToCathedralState(State[RebirthBot]):
             self.bot.execute_commands(*commands)
 
         while not self.bot.execute_commands(
-            LocateTemplateCommand("yes"), ClickCommand(reset_cursor=True)
+            LocateTemplateCommand(f"yes?{CacheParameter.YES_THREAD}"),
+            ClickCommand(reset_cursor=True),
         ):
             continue
-        command = LocateTemplateCommand(("hotbar", "info"), confidence=0.9999)
+        command = LocateTemplateCommand(("info", "hotbar"), confidence=0.9999)
         while self.bot.execute_commands(command):
             continue
         while not self.bot.execute_commands(command):
