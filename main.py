@@ -1,4 +1,4 @@
-"""Automation framework for the IMAGINE game client.
+"""Automation framework for the SMT: IMAGINE client.
 
 Provides tools for matching templates, dispatching commands in isolation and in sequence,
 and managing state. The framework is built to have moderate resilience against network
@@ -44,7 +44,7 @@ template_cache = {
     if filename.endswith(".png")
 }
 
-demon_force_items = ("sands_0", "sands_1", "loop")
+demon_force_items = ("sands_0", "sands_1", "scabbard", "loop")
 
 
 # Templates that may appear in different contexts/locations need to be parameterized
@@ -137,7 +137,7 @@ class ClickCommand(Command):
         Args:
             x: X offset relative to template/center location
             y: Y offset relative to template/center location
-            button: Mouse button to click (default: left button)
+            button: Mouse button to click
             pause: Apply pydirectinput.PAUSE
             reset_cursor: Move cursor to center of client after click to remove unwanted tooltips
             click_count: Number of clicks to perform
@@ -210,7 +210,7 @@ class DragCommand(Command):
         Args:
             x: X offset to drag relative to current position
             y: Y offset to drag relative to current position
-            button: Mouse button to use for dragging (default: secondary button)
+            button: Mouse button to use for dragging
             drag_count: Number of drag operations to perform
             drag_sleep: Amount of time to sleep before performing a drag
         """
@@ -264,6 +264,7 @@ class LocateTemplateCommand(Command):
         templates: tuple[str] | str,
         confidence: float = 0.95,
         region: tuple[int, int, int, int] | None = None,
+        mask: numpy.ndarray | None = None,
         debug: bool = False,
         permutate: bool = False,
     ):
@@ -272,13 +273,15 @@ class LocateTemplateCommand(Command):
         Args:
             templates: Collection of templates to attempt to match (or a single template string)
             confidence: Minimum confidence threshold for template matching
-            region: Optional region to search within as (x, y, width, height)
+            region: Optional region to search (x, y, width, height)
+            mask: Optional mask applied to the client capture
             debug: Log location and confidence data for all possible matches of the template
             permutate: Randomize the order of the input templates
         """
         self.templates = (templates,) if isinstance(templates, str) else templates
         self.confidence = confidence
         self.region = region
+        self.mask = mask
         self.debug = debug
         self.permutate = permutate
 
@@ -290,9 +293,9 @@ class LocateTemplateCommand(Command):
             context: Shared context containing client capture and coordinates
 
         Returns:
-            CommandResult with SUCCESS if template found above confidence threshold,
-            FAILURE otherwise. On success, sets context.last_template_location to the absolute
-            screen coordinates of the center of the template.
+            CommandResult with SUCCESS if template found above confidence threshold, FAILURE
+            otherwise. On success, sets context.last_template_location to the absolute screen
+            coordinates of the center of the template.
         """
         x, y = context.origin
 
@@ -320,8 +323,9 @@ class LocateTemplateCommand(Command):
                 )
 
             template_cache_key = template.split("?")[0]
+            capture = cv2.bitwise_and(context.capture, context.capture, mask=self.mask)
             result = cv2.matchTemplate(
-                cv2.cvtColor(context.capture[y1:y2, x1:x2], cv2.COLOR_BGR2GRAY),
+                cv2.cvtColor(capture[y1:y2, x1:x2], cv2.COLOR_BGR2GRAY),
                 template_cache[template_cache_key],
                 cv2.TM_CCOEFF_NORMED,
             )
@@ -451,7 +455,7 @@ class ImagineClient:
 
     def focus(self) -> None:
         """Bring the client window to the foreground."""
-        self._window.activate()
+        self._window.activate(wait=True)
 
 
 class BotSelection(enum.StrEnum):
@@ -481,6 +485,7 @@ class Bot[BotConfigType: BotConfig, BotContextType: BotContext](abc.ABC):
     """Base bot class that manages state and executes automation commands."""
 
     DEMON_LIST_REGION: tuple[int] = (-60, 0, 50, 450)
+    BAR_REGION: tuple[int] = (-150, 0, 300, 50)
 
     def __init__(
         self,
@@ -632,10 +637,6 @@ class RebirthBot(Bot[RebirthBotConfig, RebirthBotContext]):
     # Refresh every 27:30, i.e. the user has 2:30 to start the bot after using incense
     REFRESH_INCENSE_INTERVAL: int = 1650
 
-    def __init__(self, config: RebirthBotConfig):
-        """Initialize bot with starting state."""
-        super().__init__(config, RebirthBotContext())
-
     def next_path_index(self, counts: list[int]) -> int | None:
         """Determine the next rebirth path index to work on."""
         try:
@@ -697,7 +698,14 @@ class RebirthBot(Bot[RebirthBotConfig, RebirthBotContext]):
         return counts
 
 
-class DemonForceBot(Bot):
+@dataclasses.dataclass
+class DemonForceBotContext(BotContext):
+    """Context for demon force automation bot."""
+
+    mask: numpy.ndarray | None = None
+
+
+class DemonForceBot(Bot[BotConfig, DemonForceBotContext]):
     """Bot for automating demon force."""
 
     pass
@@ -755,7 +763,7 @@ class RelogState(State[Bot]):
                 "next_state": ReloggedState,
                 "sequence": (
                     "system",
-                    "system_select_character",
+                    "select_character",
                     "start_game",
                 ),
                 "sequence_complete": lambda: self.bot.execute_commands(
@@ -776,11 +784,15 @@ class ReloggedState(State[Bot]):
 
 class PrepareUIState(State[Bot]):
     def run(self, elapsed: float) -> StateResult:
-        for template in ("show_ui", "show_bar"):
-            self.bot.execute_commands(
-                LocateTemplateCommand(template),
-                ClickCommand(),
-            )
+        for template in ("devil", "inventory", "system"):
+            if not self.bot.execute_commands(
+                LocateTemplateCommand("bar"),
+                LocateTemplateCommand(template, region=self.bot.BAR_REGION),
+            ):
+                return StateResult(
+                    StateStatus.FAILURE,
+                    message="UI bar (PC, Devil, Item, etc.) obstructed and/or outside the screen.",
+                )
 
         if self.bot.execute_commands(LocateTemplateCommand("inventory_window")):
             return StateResult(StateStatus.SUCCESS, next_state=self.next_state)
@@ -814,7 +826,7 @@ class ViewDemonListState(State[Bot]):
                 "next_state": CheckSummonedDemonState,
                 "sequence": (
                     "devil",
-                    "devil_demon_list",
+                    "demon_list",
                 ),
                 "sequence_complete": lambda: self.bot.execute_commands(
                     LocateTemplateCommand("demon_list_window")
@@ -836,59 +848,74 @@ class InitiateDemonForceState(State[DemonForceBot]):
             ClickCommand(),
         )
 
-        if not self.bot.execute_commands(LocateTemplateCommand("perform_demon_force")):
+        if not self.bot.execute_commands(LocateTemplateCommand("demon_force")):
             return StateResult(
                 StateStatus.FAILURE, message="Please unlock demon force."
             )
         else:
+            self.bot.context.mask = (
+                numpy.ones(self.bot.client.capture.shape[:2], dtype=numpy.uint8) * 255
+            )
             return StateResult(StateStatus.SUCCESS, next_state=DemonForceState)
 
 
 class DemonForceState(State[DemonForceBot]):
     def run(self, elapsed):
         self.bot.execute_commands(
-            LocateTemplateCommand("perform_demon_force"), ClickCommand()
+            LocateTemplateCommand("demon_force"),
+            ClickCommand(),
         )
         while not self.bot.execute_commands(
-            LocateTemplateCommand("demon_force_window")
+            LocateTemplateCommand("demon_force_window"),
         ):
             continue
-        empty_slot = tuple(f"demon_force_empty_slot_{i}" for i in range(2))
+        command = LocateTemplateCommand(tuple(f"empty_slot_{i}" for i in range(2)))
+        success, context = self.bot.execute_commands_with_context(command)
 
-        if not self.bot.execute_commands(LocateTemplateCommand(empty_slot)):
+        if not success:
             self.bot.execute_commands(
                 LocateTemplateCommand("demon_force_window"),
                 ClickCommand(-160, 277, button=pydirectinput.MOUSE_SECONDARY),
             )
-            while not self.bot.execute_commands(LocateTemplateCommand(empty_slot)):
-                continue
+            while not success:
+                success, context = self.bot.execute_commands_with_context(command)
 
-        demon_force_items_region = (-92, 75, 370, 200)
-
-        if not self.bot.execute_commands(
+        slot_location = context.last_template_location
+        success, context = self.bot.execute_commands_with_context(
             LocateTemplateCommand("demon_force_window"),
-            LocateTemplateCommand(demon_force_items, region=demon_force_items_region),
-        ):
+            LocateTemplateCommand(
+                demon_force_items,
+                confidence=0.9,
+                region=(-92, 75, 370, 200),
+                mask=self.bot.context.mask,
+            ),
+        )
+        x, y = numpy.array(context.last_template_location) - numpy.array(context.origin)
+
+        if not success:
             return StateResult(
                 StateStatus.FAILURE,
                 message="Demon force items exhausted or not present.",
             )
 
+        command = LocateTemplateCommand(
+            tuple(f"effect_{i}" for i in range(3)), confidence=0.99
+        )
         self.bot.execute_commands(
-            LocateTemplateCommand("demon_force_window"),
-            LocateTemplateCommand(demon_force_items, region=demon_force_items_region),
+            ClickCommand(*context.last_template_location),
+            ClickCommand(*slot_location, click_count=0),
+            command,
             ClickCommand(),
-            LocateTemplateCommand("demon_force_effect", confidence=0.99),
-            ClickCommand(),
-            LocateTemplateCommand("demon_force_disable_confirmation"),
+            LocateTemplateCommand("disable_confirmation"),
             ClickCommand(),
             LocateTemplateCommand("use"),
             ClickCommand(click_count=100, pause=False),
         )
-        while not self.bot.execute_commands(
-            LocateTemplateCommand("demon_force_full_slot")
-        ):
-            continue
+        while not self.bot.execute_commands(LocateTemplateCommand("pending_slot")):
+            # The item hasn't been exhausted, but its uses have been exhausted and it should not be matched again
+            if not self.bot.execute_commands(command):
+                cv2.circle(self.bot.context.mask, (x, y), 10, 0, -1)
+                break
         while not self.bot.execute_commands(LocateTemplateCommand(("info", "hotbar"))):
             self.bot.execute_commands(
                 LocateTemplateCommand("demon_force_window"),
@@ -1149,7 +1176,8 @@ class FusionState(State[RebirthBot]):
                 ClickCommand(),
             )
             while not self.bot.execute_commands(
-                LocateTemplateCommand("demon_list_window"), ClickCommand()
+                LocateTemplateCommand("demon_list_window"),
+                ClickCommand(),
             ):
                 continue
             return StateResult(StateStatus.SUCCESS, next_state=PostFusionState)
@@ -1494,9 +1522,9 @@ if __name__ == "__main__":
 
         match selection:
             case BotSelection.REBIRTH:
-                bot = RebirthBot(RebirthBotConfig(**config))
+                bot = RebirthBot(RebirthBotConfig(**config), RebirthBotContext())
             case BotSelection.DEMON_FORCE:
-                bot = DemonForceBot(BotConfig(**config), BotContext())
+                bot = DemonForceBot(BotConfig(**config), DemonForceBotContext())
 
         pydirectinput.PAUSE = bot.config.sleep_amount
 

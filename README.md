@@ -4,12 +4,12 @@
 
 - To force stop a bot, make the window lose focus, e.g. windows key, alt + tab, alt + esc
 - If you encounter any issues or crashes, please send me your `debug.log` file
-- Please ensure the bar shown below is fully in view, i.e. not obstructed by any in-game windows or outside the screen at all
+- Please ensure the bar shown below is fully in view, i.e. not obstructed by any in-game windows or outside the screen
 
 ![Bar](https://external-content.duckduckgo.com/iu/?u=https://drive.google.com/uc?id=1V54-CUXLqMKLJBsZ58GY04wGli3VAEeF)
 
 - If the mouse isn't dragging the camera properly, you will need to increase `IMAGINATION_BOT_SLEEP_AMOUNT` in `.env` (and possibly `IMAGINATION_BOT_DRAG_SLEEP_AMOUNT`) until it behaves correctly and consistently
-- It is normal and expected for the bot to start slow and then increase in speed as the templates are cached
+- It is normal and expected for the bot to start slow and then increase in speed as the template regions are cached
 
 ## Rebirth Bot
 
@@ -42,6 +42,5 @@ If a mitama is specified, the bot will execute mitama fusion.
 - Have demon force items in your inventory
 
 ### Notes
-- The bot only recognizes sands (all varieties) and loops, prioritizing sands over loops
-  - When using sands, you can't have more than what is needed to fill that particular force parameter. Otherwise, it may continue trying to use that sands item and failing
-- At this time, there is no filtering logic, it will simply bring up the discard menu and wait for you to make a decision before continuing
+- The bot recognizes all varieties of sands, scabbards, and loops, and prioritizes them in that order
+- At this time, there is no filtering logic; it will simply bring up the discard menu and wait for you to make a decision before continuing
