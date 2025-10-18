@@ -913,7 +913,10 @@ class DemonForceState(State[DemonForceBot]):
         )
         while not self.bot.execute_commands(LocateTemplateCommand("pending_slot")):
             # The item hasn't been exhausted, but its uses have been exhausted and it should not be matched again
-            if not self.bot.execute_commands(command):
+            # Re-evaluate loop condition in case of TOCTOU mismatch
+            if not self.bot.execute_commands(command) and not self.bot.execute_commands(
+                LocateTemplateCommand("pending_slot")
+            ):
                 cv2.circle(self.bot.context.mask, (x, y), 10, 0, -1)
                 break
         while not self.bot.execute_commands(LocateTemplateCommand(("info", "hotbar"))):
