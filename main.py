@@ -935,7 +935,9 @@ class CheckSummonedDemonState(State[RebirthBot | DemonForceBot]):
     def run(self, elapsed):
         success, context = self.bot.execute_commands_with_context(
             LocateTemplateCommand("demon_list_window"),
-            LocateTemplateCommand("summoned", region=self.bot.DEMON_LIST_REGION),
+            LocateTemplateCommand(
+                "summoned", confidence=0.9, region=self.bot.DEMON_LIST_REGION
+            ),
         )
 
         if not success:
@@ -1094,9 +1096,7 @@ class RebirthState(State[RebirthBot]):
                     ClickCommand(),
                 )
                 sequence = ("dialogue_stop",)
-            elif self.bot.execute_commands(
-                LocateTemplateCommand("execute", confidence=0.95)
-            ):
+            elif self.bot.execute_commands(LocateTemplateCommand("execute")):
                 self.bot.execute_commands(
                     LocateTemplateCommand("execute"),
                     ClickCommand(),
@@ -1235,7 +1235,9 @@ class PostFusionState(State[RebirthBot]):
         while not self.bot.execute_commands(
             LocateTemplateCommand("demon_list_window"),
             ClickCommand(),
-            LocateTemplateCommand("summoned", confidence=0.95),
+            LocateTemplateCommand(
+                "summoned", confidence=0.9, region=self.bot.DEMON_LIST_REGION
+            ),
         ):
             logger.info("Waiting for demon to be summoned...")
         return StateResult(
