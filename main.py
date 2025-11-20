@@ -1496,8 +1496,10 @@ def parse_dotenv_value(value: str) -> str | float | bool | list[int]:
         try:
             return [int(delimited) for delimited in value.split(",")]
         except ValueError:
-            if value.casefold() in ("true", "false"):
-                return value.casefold() == "true"
+            value = value.casefold()
+
+            if value in ("true", "false"):
+                return value == "true"
 
             return value if value != "" else None
 
