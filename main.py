@@ -306,13 +306,13 @@ class LocateTemplateCommand(Command):
             if self.permutate
             else self.templates
         ):
-            if template in template_region_cache:
-                y1, y2, x1, x2 = capture_subset(
-                    context, template_region_cache[template], (0, 0)
-                )
-            elif self.region is not None:
+            if self.region is not None:
                 y1, y2, x1, x2 = capture_subset(
                     context, self.region, context.last_template_location
+                )
+            elif template in template_region_cache:
+                y1, y2, x1, x2 = capture_subset(
+                    context, template_region_cache[template], (0, 0)
                 )
             else:
                 y1, y2, x1, x2 = (
