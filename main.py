@@ -999,7 +999,7 @@ class RebirthCountState(State[RebirthBot]):
                 message="Failed to count rebirth paths. Verify the window is in view.",
             )
 
-        success, context = self.bot.execute_commands_with_context(
+        success = self.bot.execute_commands(
             LocateTemplateCommand("m_type"),
             LocateTemplateCommand(
                 tuple(f"mitama_{i}" for i, _ in enumerate(Mitama)),
@@ -1038,6 +1038,12 @@ class RebirthCountState(State[RebirthBot]):
                 },
             )
 
+        return StateResult(StateStatus.SUCCESS, next_state=RebirthPathState)
+
+
+class RebirthPathState(State[RebirthBot]):
+    def run(self, elapsed: float):
+        next_path_index = self.bot.next_path_index(self.bot.context.counts)
         path_index = None
         success, context = self.bot.execute_commands_with_context(
             LocateTemplateCommand("g_type"),
@@ -1055,7 +1061,10 @@ class RebirthCountState(State[RebirthBot]):
             path_index = context.last_template_index
         else:
             # Demon with a weird custom growth type, get the nonzero path
-            path_index = self.bot.context.counts.index(1)
+            try:
+                path_index = self.bot.context.counts.index(1)
+            except ValueError:
+                return StateResult(StateStatus.FAILURE, next_state=RebirthPathState)
 
         self.bot.context.path_changing = next_path_index != path_index
         self.bot.execute_commands(
