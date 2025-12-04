@@ -1370,12 +1370,14 @@ class ThreadToCathedralState(State[RebirthBot]):
     def run(self, elapsed: float) -> StateResult:
         cached = "thread" in template_region_cache
         success, context = self.bot.execute_commands_with_context(
-            LocateTemplateCommand("thread", confidence=0.999)
+            LocateTemplateCommand("thread")
         )
 
         if not success:
             return StateResult(
-                StateStatus.FAILURE, message="Thread obstructed or not present."
+                StateStatus.FAILURE,
+                next_state=ThreadToCathedralState,
+                next_state_kwargs=self.next_state_kwargs,
             )
 
         x, y = context.last_template_location
