@@ -1,9 +1,12 @@
-tests/
-notes/
-build/
+archive/
+
+# Python-generated files
 __pycache__/
-*.pyc
-*.pyo
-*.env
-*.webm
-*.log
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
