@@ -7,4 +7,5 @@
             "source.organizeImports.ruff": "explicit"
         }
     },
+    "workbench.colorTheme": "Dark Modern",
 }
