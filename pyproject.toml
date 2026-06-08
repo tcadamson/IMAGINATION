@@ -14,5 +14,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "cx-freeze>=8.6.4",
     "ruff>=0.15.13",
 ]
