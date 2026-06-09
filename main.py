@@ -5,6 +5,7 @@ import dataclasses
 import pathlib
 import sys
 import time
+import typing
 
 import cv2
 import mss
@@ -14,15 +15,15 @@ import pywinctl
 
 Padding = int | tuple[int, int]
 
-DEFAULT_CONFIDENCE: float = 0.85
-DEFAULT_SLEEP: float = 0.08
+DEFAULT_CONFIDENCE: typing.Final = 0.85
+DEFAULT_SLEEP: typing.Final = 0.08
 
 if getattr(sys, "frozen", False):
-    ROOT = pathlib.Path(sys.executable).parent
+    ROOT_DIR: typing.Final = pathlib.Path(sys.executable).parent
 else:
-    ROOT = pathlib.Path(__file__).resolve().parent
+    ROOT_DIR: typing.Final = pathlib.Path(__file__).resolve().parent
 
-TEMPLATE_OVERRIDES: dict[str, TemplateMetadata] = {}
+TEMPLATE_OVERRIDES: typing.Final[collections.abc.Mapping[str, TemplateSpec]] = {}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -98,15 +99,15 @@ class Rect:
 
 @dataclasses.dataclass(frozen=True, eq=False)
 class Template:
-    """Immutable template data with frame and associated metadata."""
+    """Immutable template data with frame and associated spec."""
 
     frame: numpy.ndarray
-    metadata: TemplateMetadata
+    spec: TemplateSpec
 
 
 @dataclasses.dataclass(frozen=True)
-class TemplateMetadata:
-    """Immutable template metadata."""
+class TemplateSpec:
+    """Immutable template spec."""
 
     confidence: float = DEFAULT_CONFIDENCE
     grayscale: bool = True
@@ -188,7 +189,7 @@ class Actions:
 class Client:
     """Handle and associated functions for a single IMAGINE client window."""
 
-    CLIENT_IDENTIFIER: str = "IMAGINE Version 1."
+    CLIENT_IDENTIFIER: typing.Final = "IMAGINE Version 1."
 
     def __init__(self, window: pywinctl.Window):
         self._window = window
@@ -244,7 +245,7 @@ class TemplateMatcher:
         self._region_cache: dict[tuple[str, str | None], Rect] = {}
 
     @classmethod
-    def load(cls, root: pathlib.Path = ROOT) -> TemplateMatcher:
+    def load(cls, root: pathlib.Path = ROOT_DIR) -> TemplateMatcher:
         """Create and seed matcher with PNGs from the templates directory."""
         template_matcher = cls()
         for filename in root.glob("templates/*.png"):
@@ -260,20 +261,20 @@ class TemplateMatcher:
         self,
         template_id: str,
         frame: numpy.ndarray,
-        metadata: TemplateMetadata | None = None,
-        overrides: dict[str, TemplateMetadata] | None = None,
+        spec: TemplateSpec | None = None,
+        overrides: dict[str, TemplateSpec] | None = None,
     ) -> None:
         """Register a template image and clear any stale cached regions."""
         if overrides is None:
             overrides = TEMPLATE_OVERRIDES
 
-        if metadata is None:
-            metadata = overrides.get(template_id, TemplateMetadata())
+        if spec is None:
+            spec = overrides.get(template_id, TemplateSpec())
 
-        if metadata.grayscale:
+        if spec.grayscale:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        self._templates[template_id] = Template(frame.copy(), metadata)
+        self._templates[template_id] = Template(frame.copy(), spec)
         stale = [
             region_cache_key
             for region_cache_key in self._region_cache
@@ -329,14 +330,14 @@ class TemplateMatcher:
                 frame_slice, frame_slice, mask=mask[y1:y2, x1:x2]
             )
 
-        if template.metadata.grayscale:
+        if template.spec.grayscale:
             frame_slice = cv2.cvtColor(frame_slice, cv2.COLOR_BGR2GRAY)
 
         result = cv2.matchTemplate(frame_slice, template.frame, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
         if max_val < (
-            confidence if confidence is not None else template.metadata.confidence
+            confidence if confidence is not None else template.spec.confidence
         ):
             return None
 

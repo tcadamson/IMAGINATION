@@ -9,16 +9,18 @@ As added convenience, the project name and version may be retrieved dynamically.
 Run with `uv run python build.py build`.
 """
 
+import collections.abc
 import pathlib
 import shutil
 import sys
 import tomllib
+import typing
 
 import cx_Freeze
 
 # Specifying bin_path_includes voids the default bin_excludes; restore them
 # https://github.com/marcelotduarte/cx_Freeze/blob/29f21da72e64e21cacd47f47206edc82f3e49e94/cx_Freeze/freezer.py#L1094
-DEFAULT_BIN_EXCLUDES: tuple[str] = (
+DEFAULT_BIN_EXCLUDES: typing.Final = (
     "comctl32.dll",
     "oci.dll",
     "concrt140.dll",
@@ -37,13 +39,15 @@ DEFAULT_BIN_EXCLUDES: tuple[str] = (
     "ucrtbase.dll",
 )
 
-with open(pathlib.Path(__file__).parent / "pyproject.toml", "rb") as bytes:
-    project = tomllib.load(bytes)["project"]
+with open(pathlib.Path(__file__).parent / "pyproject.toml", "rb") as fp:
+    PROJECT: typing.Final[collections.abc.Mapping[str, typing.Any]] = tomllib.load(fp)[
+        "project"
+    ]
 
-PROJECT_NAME: str = project["name"]
-PROJECT_VERSION: str = project["version"]
+PROJECT_NAME: typing.Final = PROJECT["name"]
+PROJECT_VERSION: typing.Final = PROJECT["version"]
 
-BUILD_DIR: pathlib.Path = pathlib.Path("build") / f"{PROJECT_NAME}_v{PROJECT_VERSION}"
+BUILD_DIR: typing.Final = pathlib.Path("build") / f"{PROJECT_NAME}_v{PROJECT_VERSION}"
 
 cx_Freeze.setup(
     executables=[
