@@ -47,7 +47,7 @@ BUILD_DIR: pathlib.Path = pathlib.Path("build") / f"{PROJECT_NAME}_v{PROJECT_VER
 
 cx_Freeze.setup(
     executables=[
-        cx_Freeze.Executable("main.py", target_name=PROJECT_NAME, icon="icon")
+        cx_Freeze.Executable("main.py", target_name=PROJECT_NAME, icon=PROJECT_NAME)
     ],
     options={
         "build_exe": {
