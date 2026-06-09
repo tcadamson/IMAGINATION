@@ -46,7 +46,9 @@ PROJECT_VERSION: str = project["version"]
 BUILD_DIR: pathlib.Path = pathlib.Path("build") / f"{PROJECT_NAME}_v{PROJECT_VERSION}"
 
 cx_Freeze.setup(
-    executables=[cx_Freeze.Executable("main.py", target_name=f"{PROJECT_NAME}.exe")],
+    executables=[
+        cx_Freeze.Executable("main.py", target_name=PROJECT_NAME, icon="icon")
+    ],
     options={
         "build_exe": {
             "build_exe": str(BUILD_DIR),
