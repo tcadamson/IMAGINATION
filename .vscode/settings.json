@@ -7,5 +7,6 @@
             "source.organizeImports.ruff": "explicit"
         }
     },
-    "workbench.colorTheme": "Dark Modern",
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.ignore": ["archive/**"],
 }
