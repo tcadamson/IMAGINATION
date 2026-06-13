@@ -9,4 +9,5 @@
     },
     "python.analysis.typeCheckingMode": "basic",
     "python.analysis.ignore": ["archive/**"],
+    "files.eol": "\n"
 }

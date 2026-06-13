@@ -28,7 +28,7 @@ if __name__ == "__main__":
         ).hexdigest()
         for path in paths
     }
-    with MANIFEST_PATH.open("w", encoding="utf-8") as fp:
+    with MANIFEST_PATH.open("w", encoding="utf-8", newline="\n") as fp:
         json.dump(manifest, fp, indent=4, sort_keys=True)
         fp.write("\n")
     print(f"Wrote {MANIFEST_PATH.name}: {len(manifest)} files")
