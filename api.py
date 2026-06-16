@@ -2,7 +2,10 @@
 
 import abc
 import collections.abc
+import ctypes
+import ctypes.wintypes
 import dataclasses
+import logging
 import pathlib
 import sys
 import time
@@ -30,6 +33,13 @@ TEMPLATE_OVERRIDES: typing.Final[collections.abc.Mapping[str, TemplateSpec]] = {
 
 pydirectinput.PAUSE = DEFAULT_SLEEP
 pydirectinput.FAILSAFE = False  # Use client window focus as the failsafe
+
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)
+except AttributeError, OSError:
+    ctypes.windll.user32.SetProcessDPIAware()
+
+_logger: logging.Logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -271,6 +281,38 @@ class Client:
         return self._window.getHandle()
 
     @property
+    def scale(self) -> float:
+        """Client window scale factor, as determined by containing monitor DPI.
+
+        This value is snapshotted when creating a session instance and shouldn't be
+        queried otherwise.
+        """
+        try:
+            dpi = ctypes.wintypes.UINT()
+
+            # On x64 systems, widen the arg and return types to prevent truncation
+            ctypes.windll.shcore.GetDpiForMonitor.argtypes = [
+                ctypes.wintypes.HMONITOR,
+                ctypes.c_int,
+                ctypes.POINTER(ctypes.wintypes.UINT),
+                ctypes.POINTER(ctypes.wintypes.UINT),
+            ]
+            ctypes.windll.user32.MonitorFromWindow.restype = ctypes.wintypes.HMONITOR
+
+            ctypes.windll.shcore.GetDpiForMonitor(
+                ctypes.windll.user32.MonitorFromWindow(self.handle, 2),
+                0,
+                ctypes.byref(dpi),
+                ctypes.byref(dpi),
+            )  # MONITOR_DEFAULTTONEAREST, MDT_EFFECTIVE_DPI
+            dpi = dpi.value
+        except AttributeError, OSError:
+            _logger.exception("Failed to get monitor DPI")
+            dpi = 0
+
+        return dpi / 96.0 if dpi > 0 else 1.0
+
+    @property
     def is_focused(self) -> bool:
         """Client window is the active window."""
         window = pywinctl.getActiveWindow()
@@ -298,9 +340,10 @@ class Client:
 class TemplateMatcher:
     """Template matching utility with template registry and region cache."""
 
-    def __init__(self):
+    def __init__(self, scale: float = 1.0):
         self._templates: dict[str, Template] = {}
         self._region_cache: dict[tuple[str, str | None], Rect] = {}
+        self._scale = scale
 
     @classmethod
     def from_template_directory(
@@ -308,13 +351,16 @@ class TemplateMatcher:
         template_directory: pathlib.Path,
         *,
         bot_id: str | None = None,
+        scale: float = 1.0,
     ) -> TemplateMatcher:
         """Create and seed matcher with PNGs from `template_directory`.
 
         If `bot_id` is specified, PNGs from `template_directory/<bot_id>` will seed the
         matcher in a second pass.
+
+        `scale` resizes every template to match the client scale factor.
         """
-        template_matcher = cls()
+        template_matcher = cls(scale=scale)
         template_matcher._register_template_directory(template_directory)
 
         if bot_id is not None:
@@ -332,6 +378,17 @@ class TemplateMatcher:
         """Register a template PNG and clear any stale cached regions."""
         if overrides is None:
             overrides = TEMPLATE_OVERRIDES
+
+        if abs(self._scale - 1.0) > 1e-3:
+            template_height, template_width = frame.shape[:2]
+            frame = cv2.resize(
+                frame,
+                (
+                    round(template_width * self._scale),
+                    round(template_height * self._scale),
+                ),
+                interpolation=cv2.INTER_LINEAR,
+            )
 
         if spec is None:
             spec = overrides.get(template_id, TemplateSpec())
@@ -509,15 +566,36 @@ class Observation:
 
 
 class Session:
-    """Automation session associated with a specific client window."""
+    """Automation session associated with a specific client window.
+
+    `scale` exposes the client's scale factor for converting hand-authored pixel
+    offsets.
+    """
 
     def __init__(
         self,
         client: Client,
         template_matcher: TemplateMatcher,
+        scale: float = 1.0,
     ):
         self.client = client
         self.template_matcher = template_matcher
+        self.scale = scale
+
+    @classmethod
+    def from_client(
+        cls,
+        client: Client,
+        template_directory: pathlib.Path,
+        *,
+        bot_id: str | None = None,
+    ):
+        """Create session for `client`, snapshotting its scale factor."""
+        scale = client.scale
+        template_matcher = TemplateMatcher.from_template_directory(
+            template_directory, bot_id=bot_id, scale=scale
+        )
+        return cls(client, template_matcher, scale)
 
     def _guard(self, *points: Point) -> None:
         """Assert the client has focus and all `points` are inside of it."""

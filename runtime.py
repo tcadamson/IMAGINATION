@@ -108,12 +108,7 @@ def _assign(bot_id: str, spec: api.BotSpec, client: api.Client) -> BotAssignment
 
     Isolated scope ensures the workflow lambda closes over its own variables.
     """
-    session = api.Session(
-        client,
-        api.TemplateMatcher.from_template_directory(
-            config.TEMPLATE_DIRECTORY, bot_id=bot_id
-        ),
-    )
+    session = api.Session.from_client(client, config.TEMPLATE_DIRECTORY, bot_id=bot_id)
     bot_config = spec.bot_config_type()
     return BotAssignment(
         f"{bot_id}@{client.handle}",
