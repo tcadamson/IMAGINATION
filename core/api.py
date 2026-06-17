@@ -24,10 +24,10 @@ type _Padding = int | tuple[int, int]
 DEFAULT_CONFIDENCE: typing.Final = 0.85
 DEFAULT_SLEEP: typing.Final = 0.08
 
-ROOT_DIRECTORY: typing.Final = (
-    pathlib.Path(sys.executable if getattr(sys, "frozen", False) else __file__)
-    .resolve()
-    .parent
+ROOT_DIRECTORY = (
+    pathlib.Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else pathlib.Path(__file__).resolve().parents[1]
 )
 
 _TEMPLATE_OVERRIDES: typing.Final[collections.abc.Mapping[str, TemplateSpec]] = {}

@@ -5,8 +5,8 @@ import dataclasses
 import logging
 import threading
 
-import api
-import config
+import core.api
+import core.config
 
 type OnEvent = collections.abc.Callable[[str, Event], None]
 
@@ -41,8 +41,8 @@ class BotAssignment:
     """A labeled bot bound to its session and workflow factory."""
 
     label: str
-    session: api.Session
-    workflow: collections.abc.Callable[[], api.Workflow]
+    session: core.api.Session
+    workflow: collections.abc.Callable[[], core.api.Workflow]
 
 
 class Scheduler:
@@ -62,8 +62,8 @@ class Scheduler:
     @classmethod
     def from_client_binds(
         cls,
-        client_binds: collections.abc.Iterable[tuple[str, api.Client]],
-        bots: collections.abc.Mapping[str, api.BotSpec],
+        client_binds: collections.abc.Iterable[tuple[str, core.api.Client]],
+        bots: collections.abc.Mapping[str, core.api.BotSpec],
         *,
         on_event: OnEvent | None = None,
     ):
@@ -103,12 +103,16 @@ class Scheduler:
             self._queue.append((assignment, workflow))
 
 
-def _assign(bot_id: str, spec: api.BotSpec, client: api.Client) -> BotAssignment:
+def _assign(
+    bot_id: str, spec: core.api.BotSpec, client: core.api.Client
+) -> BotAssignment:
     """Bind a bot `spec` to a `client`, returning a `BotAssignment`.
 
     Isolated scope ensures the workflow lambda closes over its own variables.
     """
-    session = api.Session.from_client(client, config.TEMPLATE_DIRECTORY, bot_id=bot_id)
+    session = core.api.Session.from_client(
+        client, core.config.TEMPLATE_DIRECTORY, bot_id=bot_id
+    )
     bot_config = spec.bot_config_type()
     return BotAssignment(
         f"{bot_id}@{client.handle}",

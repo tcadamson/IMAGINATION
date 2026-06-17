@@ -12,8 +12,8 @@ import tempfile
 import typing
 import urllib.request
 
-import api
-import config
+import core.api
+import core.config
 
 type Manifest = dict[str, str]
 
@@ -53,7 +53,7 @@ def _destination(relative_path: str) -> pathlib.Path:
     if path.is_absolute() or ".." in path.parts:
         raise ValueError(f"Unsafe path in manifest.json: {relative_path!r}")
 
-    return config.USER_DIRECTORY / path
+    return core.config.USER_DIRECTORY / path
 
 
 def _atomic_write(path: pathlib.Path, data: bytes) -> None:
@@ -77,7 +77,7 @@ def _atomic_write(path: pathlib.Path, data: bytes) -> None:
 
 def register_bot_directory(
     bot_directory: pathlib.Path,
-) -> collections.abc.Mapping[str, api.BotSpec]:
+) -> collections.abc.Mapping[str, core.api.BotSpec]:
     """Dynamically import every bot module in `bot_directory`, keyed by file stem.
 
     Automatic namespace prefix prevents collisions on sys.modules.
@@ -120,7 +120,7 @@ def sync(manifest: Manifest | None = None) -> None:
     for relative_path in sorted(
         manifest,
         key=lambda path: path.startswith(
-            f"{config.BOT_DIRECTORY.name}/"
+            f"{core.config.BOT_DIRECTORY.name}/"
         ),  # Sort templates before the bots depending on them
     ):
         destination = _destination(relative_path)

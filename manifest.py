@@ -8,22 +8,22 @@ import hashlib
 import json
 import typing
 
-import api
-import config
+import core.api
+import core.config
 
-_MANIFEST_PATH: typing.Final = api.ROOT_DIRECTORY / "manifest.json"
+_MANIFEST_PATH: typing.Final = core.api.ROOT_DIRECTORY / "manifest.json"
 
 if __name__ == "__main__":
     paths = [
-        *sorted(config.BOT_DIRECTORY.glob("*.py")),
+        *sorted(core.config.BOT_DIRECTORY.glob("*.py")),
         *(
             path
-            for path in sorted(config.TEMPLATE_DIRECTORY.rglob("*"))
+            for path in sorted(core.config.TEMPLATE_DIRECTORY.rglob("*"))
             if path.is_file()
         ),
     ]
     manifest = {
-        path.relative_to(api.ROOT_DIRECTORY).as_posix(): hashlib.sha256(
+        path.relative_to(core.api.ROOT_DIRECTORY).as_posix(): hashlib.sha256(
             path.read_bytes()
         ).hexdigest()
         for path in paths

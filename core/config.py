@@ -6,12 +6,12 @@ import enum
 import json
 import typing
 
-import api
+import core.api
 
 if typing.TYPE_CHECKING:
     from _typeshed import DataclassInstance
 
-USER_DIRECTORY: typing.Final = api.ROOT_DIRECTORY  # TODO: Derive from platformdirs
+USER_DIRECTORY: typing.Final = core.api.ROOT_DIRECTORY  # TODO: Derive from platformdirs
 BOT_DIRECTORY: typing.Final = USER_DIRECTORY / "bots"
 TEMPLATE_DIRECTORY: typing.Final = USER_DIRECTORY / "templates"
 
@@ -22,8 +22,8 @@ _CONFIG_PATH: typing.Final = USER_DIRECTORY / "config.json"
 class AppConfig:
     """Immutable program configuration."""
 
-    confidence: float = api.DEFAULT_CONFIDENCE
-    sleep: float = api.DEFAULT_SLEEP
+    confidence: float = core.api.DEFAULT_CONFIDENCE
+    sleep: float = core.api.DEFAULT_SLEEP
 
 
 @dataclasses.dataclass(frozen=True)
@@ -35,7 +35,7 @@ class Config(typing.TypedDict):
     """Type specification for the program configuration."""
 
     app: AppConfig
-    bots: collections.abc.Mapping[str, api.BotConfig]
+    bots: collections.abc.Mapping[str, core.api.BotConfig]
     presets: collections.abc.Mapping[str, PresetConfig]
 
 
@@ -78,7 +78,7 @@ def _from_mapping[T: DataclassInstance](
     return config_type(**kwargs)
 
 
-def load(specs: collections.abc.Mapping[str, api.BotSpec] | None = None) -> Config:
+def load(specs: collections.abc.Mapping[str, core.api.BotSpec] | None = None) -> Config:
     """Load and parse config.json into a typed `Config`.
 
     `specs` supplies each bot's concrete config type so per-bot configurations parse
