@@ -126,5 +126,6 @@ def _to_json(data: object) -> typing.Any:
 
 def save(config: Config) -> None:
     """Serialize `config` to config.json on disk."""
-    with CONFIG_PATH.open("w", encoding="utf-8") as fp:
-        json.dump(config, fp, default=_to_json)
+    with _CONFIG_PATH.open("w", encoding="utf-8", newline="\n") as fp:
+        json.dump(config, fp, default=_to_json, indent=4)
+        fp.write("\n")
