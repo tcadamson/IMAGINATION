@@ -17,7 +17,7 @@ import config
 
 type Manifest = dict[str, str]
 
-ROOT_URL: typing.Final = (
+_ROOT_URL: typing.Final = (
     "https://raw.githubusercontent.com/tcadamson/IMAGINATION/stable/"
 )
 
@@ -25,7 +25,7 @@ _logger: logging.Logger = logging.getLogger(__name__)
 
 
 def _request_manifest(
-    url: str = ROOT_URL + "manifest.json", timeout: float = 10.0
+    url: str = _ROOT_URL + "manifest.json", timeout: float = 10.0
 ) -> Manifest:
     """Fetch and parse the bot manifest from `url`."""
     with urllib.request.urlopen(url, timeout=timeout) as response:
@@ -132,5 +132,7 @@ def sync(manifest: Manifest | None = None) -> None:
         ):
             continue
 
-        _atomic_write(destination, _download(ROOT_URL + relative_path, sha256_expected))
+        _atomic_write(
+            destination, _download(_ROOT_URL + relative_path, sha256_expected)
+        )
         _logger.info("Installed: %s", relative_path)

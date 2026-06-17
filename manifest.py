@@ -11,14 +11,14 @@ import typing
 import api
 import config
 
-MANIFEST_PATH: typing.Final = api.ROOT_DIRECTORY / "manifest.json"
+_MANIFEST_PATH: typing.Final = api.ROOT_DIRECTORY / "manifest.json"
 
 if __name__ == "__main__":
     paths = [
-        *sorted((config.BOT_DIRECTORY).glob("*.py")),
+        *sorted(config.BOT_DIRECTORY.glob("*.py")),
         *(
             path
-            for path in sorted((config.TEMPLATE_DIRECTORY).rglob("*"))
+            for path in sorted(config.TEMPLATE_DIRECTORY.rglob("*"))
             if path.is_file()
         ),
     ]
@@ -28,7 +28,7 @@ if __name__ == "__main__":
         ).hexdigest()
         for path in paths
     }
-    with MANIFEST_PATH.open("w", encoding="utf-8", newline="\n") as fp:
+    with _MANIFEST_PATH.open("w", encoding="utf-8", newline="\n") as fp:
         json.dump(manifest, fp, indent=4, sort_keys=True)
         fp.write("\n")
-    print(f"Wrote {MANIFEST_PATH.name}: {len(manifest)} files")
+    print(f"Wrote {_MANIFEST_PATH.name}: {len(manifest)} files")

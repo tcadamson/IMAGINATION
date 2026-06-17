@@ -17,8 +17,9 @@ import numpy
 import pydirectinput
 import pywinctl
 
-type Padding = int | tuple[int, int]
 type Workflow = collections.abc.Iterator[Handoff]
+
+type _Padding = int | tuple[int, int]
 
 DEFAULT_CONFIDENCE: typing.Final = 0.85
 DEFAULT_SLEEP: typing.Final = 0.08
@@ -29,7 +30,7 @@ ROOT_DIRECTORY: typing.Final = (
     .parent
 )
 
-TEMPLATE_OVERRIDES: typing.Final[collections.abc.Mapping[str, TemplateSpec]] = {}
+_TEMPLATE_OVERRIDES: typing.Final[collections.abc.Mapping[str, TemplateSpec]] = {}
 
 pydirectinput.PAUSE = DEFAULT_SLEEP
 pydirectinput.FAILSAFE = False  # Use client window focus as the failsafe
@@ -90,7 +91,7 @@ class Rect:
             and self.y <= point.y < self.y + self.height
         )
 
-    def inflate(self, padding: Padding) -> Rect:
+    def inflate(self, padding: _Padding) -> Rect:
         """Return a rectangle grown outward by the `padding` amount on each side.
 
         A single int expands both axes equally; a (dx, dy) pair expands them
@@ -165,7 +166,7 @@ class LocateParams:
     """Immutable locate parameters."""
 
     region: Rect | None = None
-    region_padding: Padding = 0
+    region_padding: _Padding = 0
     region_cache_id: str | None = None
     mask: numpy.ndarray | None = None
     confidence: float | None = None
@@ -377,7 +378,7 @@ class TemplateMatcher:
     ) -> None:
         """Register a template PNG and clear any stale cached regions."""
         if overrides is None:
-            overrides = TEMPLATE_OVERRIDES
+            overrides = _TEMPLATE_OVERRIDES
 
         if abs(self._scale - 1.0) > 1e-3:
             template_height, template_width = frame.shape[:2]

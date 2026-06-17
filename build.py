@@ -20,7 +20,7 @@ import cx_Freeze
 
 # Specifying bin_path_includes voids the default bin_excludes; restore them
 # https://github.com/marcelotduarte/cx_Freeze/blob/29f21da72e64e21cacd47f47206edc82f3e49e94/cx_Freeze/freezer.py#L1094
-DEFAULT_BIN_EXCLUDES: typing.Final = (
+_DEFAULT_BIN_EXCLUDES: typing.Final = (
     "comctl32.dll",
     "oci.dll",
     "concrt140.dll",
@@ -56,7 +56,7 @@ cx_Freeze.setup(
     options={
         "build_exe": {
             "build_exe": str(BUILD_DIR),
-            "bin_excludes": [*DEFAULT_BIN_EXCLUDES],
+            "bin_excludes": [*_DEFAULT_BIN_EXCLUDES],
             "bin_path_includes": [sys.base_prefix],
             "include_files": ["templates", "bots"],
         }

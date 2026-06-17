@@ -15,7 +15,7 @@ USER_DIRECTORY: typing.Final = api.ROOT_DIRECTORY  # TODO: Derive from platformd
 BOT_DIRECTORY: typing.Final = USER_DIRECTORY / "bots"
 TEMPLATE_DIRECTORY: typing.Final = USER_DIRECTORY / "templates"
 
-CONFIG_PATH: typing.Final = USER_DIRECTORY / "config.json"
+_CONFIG_PATH: typing.Final = USER_DIRECTORY / "config.json"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -91,12 +91,12 @@ def load(specs: collections.abc.Mapping[str, api.BotSpec] | None = None) -> Conf
     data: dict[str, typing.Any] = {}
 
     try:
-        with CONFIG_PATH.open(encoding="utf-8") as fp:
+        with _CONFIG_PATH.open(encoding="utf-8") as fp:
             data = json.load(fp)
     except FileNotFoundError:
         pass
     except json.JSONDecodeError as exception:
-        raise RuntimeError(f"Malformed JSON at {CONFIG_PATH}") from exception
+        raise RuntimeError(f"Malformed JSON at {_CONFIG_PATH}") from exception
 
     return Config(
         app=_from_mapping(AppConfig, data.get("app", {})),

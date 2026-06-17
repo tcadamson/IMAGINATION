@@ -7,12 +7,12 @@ import api
 
 
 @dataclasses.dataclass(frozen=True)
-class RebirthConfig(api.BotConfig):
+class RebirthBotConfig(api.BotConfig):
     cycles_limit: int = 1
 
 
 class RebirthBot(api.Bot):
-    bot_config: RebirthConfig
+    bot_config: RebirthBotConfig
 
     def pre_cycle(self) -> None:
         self.session.click_template("quit", click_params=api.ClickParams(count=0))
@@ -28,4 +28,4 @@ class RebirthBot(api.Bot):
                 return
 
 
-SPEC: typing.Final = api.BotSpec(RebirthConfig, RebirthBot.workflow)
+SPEC: typing.Final = api.BotSpec(RebirthBotConfig, RebirthBot.workflow)
