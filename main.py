@@ -102,6 +102,19 @@ class Command(abc.ABC):
         pass
 
 
+class ScrollCommand(Command):
+    """Command to perform mouse scroll operations."""
+
+    def __init__(self, clicks: int):
+        """Initialize scroll command with click count."""
+        self.clicks = clicks
+
+    def execute(self, context: dict) -> CommandResult:
+        """Execute scroll operation."""
+        pydirectinput.scroll(self.clicks, interval=0.015)
+        return CommandResult(CommandStatus.SUCCESS)
+
+
 class WaitCommand(Command):
     """Command to pause execution for a specified duration."""
 
@@ -203,7 +216,8 @@ class DragCommand(Command):
         y: int = 0,
         button: str = pydirectinput.MOUSE_SECONDARY,
         drag_count: int = 1,
-        drag_sleep: float = 0.0,
+        drag_sleep: float = 0.15,
+        drag_pre_sleep: float = 0.0,
     ):
         """Initialize drag command.
 
@@ -212,13 +226,15 @@ class DragCommand(Command):
             y: Y offset to drag relative to current position
             button: Mouse button to use for dragging
             drag_count: Number of drag operations to perform
-            drag_sleep: Amount of time to sleep before performing a drag
+            drag_sleep: Amount of time to sleep after each of a drag's intermediate mouse actions
+            drag_pre_sleep: Amount of time to sleep before performing a drag
         """
         self.x = x
         self.y = y
         self.button = button
         self.drag_count = drag_count
         self.drag_sleep = drag_sleep
+        self.drag_pre_sleep = drag_pre_sleep
 
     def execute(self, context: CommandContext) -> CommandResult:
         """Execute drag command.
@@ -227,8 +243,9 @@ class DragCommand(Command):
             CommandResult with SUCCESS status
         """
         center_x, center_y = context.center
+        pydirectinput.PAUSE = self.drag_sleep
         for _ in range(self.drag_count):
-            time.sleep(self.drag_sleep)
+            time.sleep(self.drag_pre_sleep)
             move_to_wrapper(center_x, center_y, attempt_pixel_perfect=True)
             pydirectinput.mouseDown(button=pydirectinput.MOUSE_SECONDARY)
             move_to_wrapper(
@@ -237,6 +254,7 @@ class DragCommand(Command):
                 attempt_pixel_perfect=True,
             )
             pydirectinput.mouseUp(button=pydirectinput.MOUSE_SECONDARY)
+        pydirectinput.PAUSE = bot.config.sleep_amount
         return CommandResult(CommandStatus.SUCCESS)
 
 
@@ -472,6 +490,7 @@ class BotConfig:
     relog: bool
     sleep_amount: float
     drag_sleep_amount: float
+    drag_pre_sleep_amount: float
 
 
 @dataclasses.dataclass
@@ -524,10 +543,12 @@ class Bot[BotConfigType: BotConfig, BotContextType: BotContext](abc.ABC):
                 logger.error("IMAGINE client window lost focus.")
                 sys.exit()
 
-            if self.config.drag_sleep_amount is not None and isinstance(
-                command, DragCommand
-            ):
-                command.drag_sleep = self.config.drag_sleep_amount
+            if isinstance(command, DragCommand):
+                if self.config.drag_sleep_amount is not None:
+                    command.drag_sleep = self.config.drag_sleep_amount
+
+                if self.config.drag_pre_sleep_amount is not None:
+                    command.drag_pre_sleep = self.config.drag_pre_sleep_amount
 
             context.capture = self.client.capture
             context.origin = (self.client.x, self.client.y)
@@ -812,7 +833,14 @@ class PrepareUIState(State[Bot]):
 
 class PrepareCameraState(State[Bot]):
     def run(self, elapsed: float) -> StateResult:
-        self.bot.execute_commands(DragCommand(400, 0, drag_count=4))
+        self.bot.execute_commands(
+            DragCommand(400, 0, drag_count=4),
+            ClickCommand(
+                self.bot.client.center_x, self.bot.client.center_y, click_count=0
+            ),
+            ScrollCommand(75),
+            ScrollCommand(-5),
+        )
         return StateResult(status=StateStatus.SUCCESS, next_state=self.next_state)
 
 
@@ -1300,7 +1328,7 @@ class ApproachVivianState(State[RebirthBot]):
 
     def run(self, elapsed: float) -> StateResult:
         if elapsed == 0:
-            self.bot.execute_commands(DragCommand(110, 0, drag_count=2))
+            self.bot.execute_commands(DragCommand(235, 0))
 
             if (time.time() - self.bot.start_time) >= self.bot.REFRESH_INCENSE_INTERVAL:
                 self.bot.start_time = time.time()
@@ -1315,7 +1343,7 @@ class ApproachVivianState(State[RebirthBot]):
                     # Invalidate the cached thread region to ensure it's clicked again if it's the item version
                     del template_region_cache["thread"]
                 else:
-                    logger.info(f"Couldn't locate x10 demon incense to refresh.")
+                    logger.info("Couldn't locate x10 demon incense to refresh.")
         elif elapsed >= self.max_elapsed:
             return StateResult(
                 StateStatus.FAILURE,
@@ -1553,4 +1581,4 @@ if __name__ == "__main__":
 
         bot.run()
     except Exception:
-        logger.exception(f"Fatal exception:", exc_info=True)
+        logger.exception("Fatal exception:", exc_info=True)
