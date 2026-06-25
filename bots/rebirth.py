@@ -8,13 +8,13 @@ import core.api
 
 @dataclasses.dataclass(frozen=True)
 class RebirthBotConfig(core.api.BotConfig):
-    cycles_limit: int = 1
+    cycles_limit: int = dataclasses.field(default=1, kw_only=True)
 
 
 class RebirthBot(core.api.Bot):
     bot_config: RebirthBotConfig
 
-    def pre_cycle(self) -> None:
+    def setup(self) -> None:
         self.session.click_template("quit", click_params=core.api.ClickParams(count=0))
 
     def cycle(self):
@@ -28,4 +28,9 @@ class RebirthBot(core.api.Bot):
                 return
 
 
-SPEC: typing.Final = core.api.BotSpec(RebirthBotConfig, RebirthBot.workflow)
+SPEC: typing.Final = core.api.BotSpec(
+    "rebirth",
+    RebirthBotConfig,
+    RebirthBot.workflow,
+    help="Perform rebirths on the currently summoned demon.",
+)

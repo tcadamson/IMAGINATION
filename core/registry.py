@@ -76,31 +76,40 @@ def _atomic_write(path: pathlib.Path, data: bytes) -> None:
 
 
 def register_bot_directory(
-    bot_directory: pathlib.Path,
+    bot_directory: pathlib.Path, stale_bot_ids: collections.abc.Container[str] = ()
 ) -> collections.abc.Mapping[str, core.api.BotSpec]:
-    """Dynamically import every bot module in `bot_directory`, keyed by file stem.
+    """Import every bot module in `bot_directory`, keyed by file stem.
 
-    Automatic namespace prefix prevents collisions on sys.modules.
+    Modules already in sys.modules are reused, while a failed import keeps the
+    previously loaded version. Modules in `stale_bot_ids` are forced to re-import.
     """
     bots = {}
     for path in sorted(bot_directory.glob("*.py")):
         bot_id = path.stem
-        bot_module_id = f"_bot_{bot_id}"
+
+        module_id = f"_bot_{bot_id}"
+        module_cached = sys.modules.get(module_id)
+
+        if module_cached is not None and bot_id not in stale_bot_ids:
+            bots[bot_id] = module_cached.SPEC
+            continue
 
         try:
-            spec = importlib.util.spec_from_file_location(bot_module_id, path)
+            spec = importlib.util.spec_from_file_location(module_id, path)
 
             if spec is None or spec.loader is None:
                 raise ImportError("No loadable module spec")
 
             module = importlib.util.module_from_spec(spec)
-            sys.modules[bot_module_id] = (
+            sys.modules[module_id] = (
                 module  # Executing before registering here would break dataclasses, among other things
             )
             spec.loader.exec_module(module)
             bots[bot_id] = module.SPEC
         except Exception:
-            sys.modules.pop(bot_module_id, None)
+            if module_cached is None:  # Don't discard previously working version
+                sys.modules.pop(module_id, None)
+
             _logger.exception("Failed to load bot: %s", path)
             continue
 
@@ -108,12 +117,13 @@ def register_bot_directory(
     return bots
 
 
-def sync(manifest: Manifest | None = None) -> None:
+def sync(manifest: Manifest | None = None) -> set[str]:
     """Download each manifest entry whose local copy is absent or stale.
 
-    Fetch the `manifest` from the repo if omitted. Files already matching their
-    expected checksum are left untouched.
+    Return the stems of the files that were (re)downloaded.
     """
+    stale_bot_ids: set[str] = set()
+
     if manifest is None:
         manifest = _request_manifest()
 
@@ -135,4 +145,6 @@ def sync(manifest: Manifest | None = None) -> None:
         _atomic_write(
             destination, _download(_ROOT_URL + relative_path, sha256_expected)
         )
+        stale_bot_ids.add(pathlib.PurePosixPath(relative_path).stem)
         _logger.info("Installed: %s", relative_path)
+    return stale_bot_ids

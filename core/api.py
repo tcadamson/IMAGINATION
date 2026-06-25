@@ -24,7 +24,7 @@ type _Padding = int | tuple[int, int]
 DEFAULT_CONFIDENCE: typing.Final = 0.85
 DEFAULT_SLEEP: typing.Final = 0.08
 
-ROOT_DIRECTORY = (
+ROOT_DIRECTORY: typing.Final = (
     pathlib.Path(sys.executable).resolve().parent
     if getattr(sys, "frozen", False)
     else pathlib.Path(__file__).resolve().parents[1]
@@ -125,15 +125,27 @@ class Handoff:
 class BotSpec:
     """Bot definition pairing `bot_config_type` with its workflow factory."""
 
+    bot_id: str
     bot_config_type: type[BotConfig]
     workflow: collections.abc.Callable[[Session, BotConfig], Workflow]
+    help: str = dataclasses.field(default="", kw_only=True)
 
 
 @dataclasses.dataclass(frozen=True)
 class BotConfig:
     """Base configuration for a bot workflow."""
 
-    cycles_limit: int = 0  # 0 runs indefinitely
+    cycles_limit: int = dataclasses.field(
+        default=0, kw_only=True
+    )  # 0 runs indefinitely
+
+
+@dataclasses.dataclass(frozen=True)
+class RunConfig:
+    """Run configuration for a bot workflow."""
+
+    confidence: float = DEFAULT_CONFIDENCE
+    sleep: float = DEFAULT_SLEEP
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -148,7 +160,7 @@ class Template:
 class TemplateSpec:
     """Immutable template spec."""
 
-    confidence: float = DEFAULT_CONFIDENCE
+    confidence: float
     grayscale: bool = True
 
 
@@ -188,7 +200,7 @@ class Bot(abc.ABC):
         self.session = session
         self.bot_config = bot_config
 
-    def pre_cycle(self) -> None:
+    def setup(self) -> None:
         """One-time blocking setup before cycling.
 
         Override if needed.
@@ -202,7 +214,7 @@ class Bot(abc.ABC):
     def workflow(cls, session: Session, bot_config: BotConfig) -> Workflow:
         """One-time blocking setup, then yield from the bot's cycle loop."""
         bot = cls(session, bot_config)
-        bot.pre_cycle()
+        bot.setup()
         yield from bot.cycle()
 
 
@@ -282,7 +294,20 @@ class Client:
         return self._window.getHandle()
 
     @property
-    def scale(self) -> float:
+    def is_focused(self) -> bool:
+        """Client window is the active window."""
+        window = pywinctl.getActiveWindow()
+        return window is not None and self._window.getHandle() == window.getHandle()
+
+    def focus(self) -> None:
+        """Activate the client window and wait until focus is confirmed."""
+        while not self.is_focused:
+            self._window.activate()
+            # Wait parameter doesn't actually do anything :/
+            # https://github.com/Kalmat/PyWinCtl/blob/9d06c4d5d5fa90ad54d56c36d12fd83eda5fb5d0/src/pywinctl/_pywinctl_win.py#L636
+            time.sleep(0.025)
+
+    def calculate_scale(self) -> float:
         """Client window scale factor, as determined by containing monitor DPI.
 
         This value is snapshotted when creating a session instance and shouldn't be
@@ -313,20 +338,6 @@ class Client:
 
         return dpi / 96.0 if dpi > 0 else 1.0
 
-    @property
-    def is_focused(self) -> bool:
-        """Client window is the active window."""
-        window = pywinctl.getActiveWindow()
-        return window is not None and self._window.getHandle() == window.getHandle()
-
-    def focus(self) -> None:
-        """Activate the client window and wait until focus is confirmed."""
-        while not self.is_focused:
-            self._window.activate()
-            # Wait parameter doesn't actually do anything :/
-            # https://github.com/Kalmat/PyWinCtl/blob/9d06c4d5d5fa90ad54d56c36d12fd83eda5fb5d0/src/pywinctl/_pywinctl_win.py#L636
-            time.sleep(0.025)
-
     def capture(self) -> numpy.ndarray:
         """Capture the client frame in BGR."""
         if self._mss is None:
@@ -341,10 +352,11 @@ class Client:
 class TemplateMatcher:
     """Template matching utility with template registry and region cache."""
 
-    def __init__(self, scale: float = 1.0):
+    def __init__(self, scale: float, confidence: float):
         self._templates: dict[str, Template] = {}
         self._region_cache: dict[tuple[str, str | None], Rect] = {}
         self._scale = scale
+        self._confidence = confidence
 
     @classmethod
     def from_template_directory(
@@ -352,7 +364,8 @@ class TemplateMatcher:
         template_directory: pathlib.Path,
         *,
         bot_id: str | None = None,
-        scale: float = 1.0,
+        scale: float,
+        confidence: float,
     ) -> TemplateMatcher:
         """Create and seed matcher with PNGs from `template_directory`.
 
@@ -361,7 +374,7 @@ class TemplateMatcher:
 
         `scale` resizes every template to match the client scale factor.
         """
-        template_matcher = cls(scale=scale)
+        template_matcher = cls(scale, confidence)
         template_matcher._register_template_directory(template_directory)
 
         if bot_id is not None:
@@ -370,16 +383,9 @@ class TemplateMatcher:
         return template_matcher
 
     def _register_template(
-        self,
-        template_id: str,
-        frame: numpy.ndarray,
-        spec: TemplateSpec | None = None,
-        overrides: collections.abc.Mapping[str, TemplateSpec] | None = None,
+        self, template_id: str, frame: numpy.ndarray, spec: TemplateSpec | None = None
     ) -> None:
         """Register a template PNG and clear any stale cached regions."""
-        if overrides is None:
-            overrides = _TEMPLATE_OVERRIDES
-
         if abs(self._scale - 1.0) > 1e-3:
             template_height, template_width = frame.shape[:2]
             frame = cv2.resize(
@@ -392,7 +398,7 @@ class TemplateMatcher:
             )
 
         if spec is None:
-            spec = overrides.get(template_id, TemplateSpec())
+            spec = _TEMPLATE_OVERRIDES.get(template_id, TemplateSpec(self._confidence))
 
         if spec.grayscale:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -573,30 +579,11 @@ class Session:
     offsets.
     """
 
-    def __init__(
-        self,
-        client: Client,
-        template_matcher: TemplateMatcher,
-        scale: float = 1.0,
-    ):
-        self.client = client
-        self.template_matcher = template_matcher
-        self.scale = scale
+    def __init__(self, client: Client, template_matcher: TemplateMatcher, scale: float):
+        self._template_matcher = template_matcher
 
-    @classmethod
-    def from_client(
-        cls,
-        client: Client,
-        template_directory: pathlib.Path,
-        *,
-        bot_id: str | None = None,
-    ):
-        """Create session for `client`, snapshotting its scale factor."""
-        scale = client.scale
-        template_matcher = TemplateMatcher.from_template_directory(
-            template_directory, bot_id=bot_id, scale=scale
-        )
-        return cls(client, template_matcher, scale)
+        self.client = client
+        self.scale = scale
 
     def _guard(self, *points: Point) -> None:
         """Assert the client has focus and all `points` are inside of it."""
@@ -612,7 +599,7 @@ class Session:
         """Observe a fresh client capture."""
         self._guard()
         return Observation(
-            self.client.capture(), self.client.rect, self.template_matcher
+            self.client.capture(), self.client.rect, self._template_matcher
         )
 
     def observe_until[T](

@@ -5,6 +5,8 @@ import dataclasses
 import logging
 import threading
 
+import pydirectinput
+
 import core.api
 import core.config
 
@@ -45,6 +47,15 @@ class BotAssignment:
     workflow: collections.abc.Callable[[], core.api.Workflow]
 
 
+@dataclasses.dataclass(frozen=True)
+class Bind:
+    """A bot spec paired with the client and config it should run against."""
+
+    client: core.api.Client
+    spec: core.api.BotSpec
+    bot_config: core.api.BotConfig
+
+
 class Scheduler:
     """Round-robin scheduler advancing bot workflows one handoff at a time."""
 
@@ -60,17 +71,18 @@ class Scheduler:
         )
 
     @classmethod
-    def from_client_binds(
+    def from_binds(
         cls,
-        client_binds: collections.abc.Iterable[tuple[str, core.api.Client]],
-        bots: collections.abc.Mapping[str, core.api.BotSpec],
+        binds: collections.abc.Iterable[Bind],
+        run_config: core.api.RunConfig,
         *,
         on_event: OnEvent | None = None,
     ):
-        """Build a scheduler from `client_binds` against the `bots` registry."""
-        assignments = tuple(
-            _assign(bot_id, bots[bot_id], client) for bot_id, client in client_binds
-        )
+        """Build a scheduler from `binds` (specs against clients)."""
+        assignments = tuple(_assign(bind, run_config) for bind in binds)
+        pydirectinput.PAUSE = (
+            run_config.sleep
+        )  # Sits naturally here, but could also expose a setter method in api.py
         return cls(assignments, on_event)
 
     def stop(self) -> None:
@@ -103,21 +115,26 @@ class Scheduler:
             self._queue.append((assignment, workflow))
 
 
-def _assign(
-    bot_id: str, spec: core.api.BotSpec, client: core.api.Client
-) -> BotAssignment:
+def _assign(bind: Bind, run_config: core.api.RunConfig) -> BotAssignment:
     """Bind a bot `spec` to a `client`, returning a `BotAssignment`.
 
     Isolated scope ensures the workflow lambda closes over its own variables.
     """
-    session = core.api.Session.from_client(
-        client, core.config.TEMPLATE_DIRECTORY, bot_id=bot_id
+    scale = bind.client.calculate_scale()
+    session = core.api.Session(
+        bind.client,
+        core.api.TemplateMatcher.from_template_directory(
+            core.config.TEMPLATE_DIRECTORY,
+            bot_id=bind.spec.bot_id,
+            scale=scale,
+            confidence=run_config.confidence,
+        ),
+        scale,
     )
-    bot_config = spec.bot_config_type()
     return BotAssignment(
-        f"{bot_id}@{client.handle}",
+        f"{bind.spec.bot_id}@{bind.client.handle}",
         session,
-        lambda: spec.workflow(session, bot_config),
+        lambda: bind.spec.workflow(session, bind.bot_config),
     )
 
 
