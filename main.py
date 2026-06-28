@@ -26,7 +26,7 @@ _BANNER: typing.Final = r"""
 666666   666666   6666666   Automation framework for the SMT: IMAGINE client.
 6666666666666666666666666   Bots for rebirth, demon force, and more.
 666   66        66   6666
-666    6        6    6666   Version: v2.0.0-beta
+666    6        6    6666   Version: v2.0.0-beta.1
 6666                66666   Repo: https://github.com/tcadamson/IMAGINATION
 6666666666666666666666666
 6666666666666666666666666

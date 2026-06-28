@@ -48,7 +48,7 @@ PROJECT_NAME: typing.Final = PROJECT["name"]
 PROJECT_VERSION: typing.Final = PROJECT["version"]
 
 BUILD_DIRECTORY: typing.Final = (
-    pathlib.Path("build") / f"{PROJECT_NAME}_v{PROJECT_VERSION}"
+    pathlib.Path("build") / f"{PROJECT_NAME}_v{PROJECT_VERSION.replace('b', '-beta.')}"
 )
 
 cx_Freeze.setup(

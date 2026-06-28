@@ -1,6 +1,6 @@
 [project]
 name = "IMAGINATION"
-version = "2.0.0"
+version = "2.0.0b1"
 description = "Automation framework for the SMT: IMAGINE client"
 readme = "README.md"
 requires-python = ">=3.14"
