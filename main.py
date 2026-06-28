@@ -96,7 +96,9 @@ def update() -> None:
     _cli_run.registered_commands = []
 
     print("Checking for updates...")
-    stale_bot_ids = core.registry.sync()
+    stale_bot_ids = (
+        set() if core.config.USER_DIRECTORY_OVERRIDE_PASSED else core.registry.sync()
+    )
     print("Done.")
 
     for spec in core.registry.register_bot_directory(
@@ -188,7 +190,7 @@ if __name__ == "__main__":
         handlers=[
             logging.StreamHandler(),
             logging.FileHandler(
-                core.api.ROOT_DIRECTORY / "debug.log", encoding="utf-8"
+                core.config.USER_DIRECTORY / "debug.log", encoding="utf-8"
             ),
         ],
     )

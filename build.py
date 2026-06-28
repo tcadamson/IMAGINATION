@@ -47,7 +47,9 @@ with open(pathlib.Path(__file__).parent / "pyproject.toml", "rb") as fp:
 PROJECT_NAME: typing.Final = PROJECT["name"]
 PROJECT_VERSION: typing.Final = PROJECT["version"]
 
-BUILD_DIR: typing.Final = pathlib.Path("build") / f"{PROJECT_NAME}_v{PROJECT_VERSION}"
+BUILD_DIRECTORY: typing.Final = (
+    pathlib.Path("build") / f"{PROJECT_NAME}_v{PROJECT_VERSION}"
+)
 
 cx_Freeze.setup(
     executables=[
@@ -55,10 +57,10 @@ cx_Freeze.setup(
     ],
     options={
         "build_exe": {
-            "build_exe": str(BUILD_DIR),
+            "build_exe": str(BUILD_DIRECTORY),
+            "include_files": ["LICENSE"],
             "bin_excludes": [*_DEFAULT_BIN_EXCLUDES],
             "bin_path_includes": [sys.base_prefix],
-            "include_files": ["templates", "bots"],
         }
     },
 )
@@ -66,7 +68,7 @@ cx_Freeze.setup(
 for egg_info in pathlib.Path(__file__).parent.glob("*.egg-info"):
     shutil.rmtree(egg_info, ignore_errors=True)
 
-frozen_application_license = BUILD_DIR / "frozen_application_license.txt"
+frozen_application_license = BUILD_DIRECTORY / "frozen_application_license.txt"
 
 if frozen_application_license.exists():
     frozen_application_license.unlink()

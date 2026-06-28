@@ -2,11 +2,23 @@
 
 import collections.abc
 import json
+import os
+import pathlib
 import typing
 
-import core.api
+import platformdirs
 
-USER_DIRECTORY: typing.Final = core.api.ROOT_DIRECTORY  # TODO: Derive from platformdirs
+_USER_DIRECTORY_OVERRIDE: typing.Final = os.environ.get("IMAGINATION_USER_DIRECTORY")
+
+USER_DIRECTORY_OVERRIDE_PASSED: typing.Final = (
+    _USER_DIRECTORY_OVERRIDE is not None
+)  # Use project root during development
+
+USER_DIRECTORY: typing.Final = (
+    pathlib.Path(_USER_DIRECTORY_OVERRIDE).resolve()
+    if _USER_DIRECTORY_OVERRIDE
+    else platformdirs.user_data_path("IMAGINATION", appauthor=False, ensure_exists=True)
+)
 BOT_DIRECTORY: typing.Final = USER_DIRECTORY / "bots"
 TEMPLATE_DIRECTORY: typing.Final = USER_DIRECTORY / "templates"
 

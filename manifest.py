@@ -9,16 +9,15 @@ import json
 import typing
 
 import core.api
-import core.config
 
 _MANIFEST_PATH: typing.Final = core.api.ROOT_DIRECTORY / "manifest.json"
 
 if __name__ == "__main__":
     paths = [
-        *sorted(core.config.BOT_DIRECTORY.glob("*.py")),
+        *sorted((core.api.ROOT_DIRECTORY / "bots").glob("*.py")),
         *(
             path
-            for path in sorted(core.config.TEMPLATE_DIRECTORY.rglob("*"))
+            for path in sorted((core.api.ROOT_DIRECTORY / "templates").rglob("*"))
             if path.is_file()
         ),
     ]
