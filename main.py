@@ -1,10 +1,12 @@
 """Program entry point for IMAGINATION."""
 
 import collections.abc
+import ctypes
 import dataclasses
 import inspect
 import logging
 import shlex
+import traceback
 import typing
 
 import typer
@@ -106,6 +108,28 @@ def update() -> None:
     _group = typer.main.get_group(_cli)
 
 
+def _error_dialog(exception: BaseException) -> None:
+    """Surface `exception` as a dialog above the active client."""
+    ctypes.windll.user32.MessageBoxW(
+        None,
+        "".join(
+            traceback.format_exception(
+                type(exception), exception, exception.__traceback__
+            )
+        ),
+        "IMAGINATION",
+        0x10 | 0x00001000,  # MB_ICONERROR | MB_SYSTEMMODAL
+    )
+
+
+def _on_event_override(label: str, event: core.runtime.Event) -> None:
+    """Log every event, and alert the user via dialog on a crash."""
+    core.runtime.log_event(label, event)
+
+    if isinstance(event, core.runtime.CrashedEvent):
+        _error_dialog(event.exception)
+
+
 def _launch(
     spec: core.api.BotSpec,
     bot_config: core.api.BotConfig,
@@ -114,7 +138,9 @@ def _launch(
     """Bind `spec` to the located client and run its workflow to completion."""
     clients = core.api.Client.locate_all()
     scheduler = core.runtime.Scheduler.from_binds(
-        (core.runtime.Bind(clients[0], spec, bot_config),), run_config
+        (core.runtime.Bind(clients[0], spec, bot_config),),
+        run_config,
+        on_event=_on_event_override,
     )
     scheduler.run()
 
@@ -144,6 +170,17 @@ def _generate_command(spec: core.api.BotSpec):
     return command
 
 
+def _guard(callback: typing.Callable[[], None]) -> None:
+    """Run `callback`, surfacing any crash as an error dialog."""
+    try:
+        callback()
+    except SystemExit:  # Raised by typer internals
+        pass
+    except Exception as exception:
+        logging.exception("Fatal exception:")
+        _error_dialog(exception)
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.DEBUG,
@@ -156,16 +193,14 @@ if __name__ == "__main__":
         ],
     )
     _cli.add_typer(_cli_run, name="run")
-    update()
-    _group = typing.cast(typer.core.TyperGroup, _group)
+    _guard(update)
+    group = typing.cast(
+        typer.core.TyperGroup, _group
+    )  # Make type narrowing visible to lambda scopes by assigning to new local
     print(_BANNER)
-
-    try:
-        _group.main(
-            args=("--help",), prog_name=""
-        )  # Print help message on initial launch
-    except SystemExit:
-        pass
+    _guard(
+        lambda: group.main(args=("--help",), prog_name="")
+    )  # Print help message on initial launch
 
     while True:
         print()
@@ -178,9 +213,4 @@ if __name__ == "__main__":
         if response == "":
             continue
 
-        try:
-            _group.main(args=shlex.split(response), prog_name="")
-        except SystemExit:  # Raised by typer internals
-            pass
-        except Exception:
-            logging.exception("Fatal exception:")
+        _guard(lambda: group.main(args=shlex.split(response), prog_name=""))

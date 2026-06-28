@@ -1,6 +1,7 @@
 """Discover, synchronize, and register IMAGINATION bots."""
 
 import collections.abc
+import dataclasses
 import hashlib
 import importlib.util
 import json
@@ -91,7 +92,7 @@ def register_bot_directory(
         module_cached = sys.modules.get(module_id)
 
         if module_cached is not None and bot_id not in stale_bot_ids:
-            bots[bot_id] = module_cached.SPEC
+            bots[bot_id] = dataclasses.replace(module_cached.SPEC, bot_id=bot_id)
             continue
 
         try:
@@ -105,7 +106,7 @@ def register_bot_directory(
                 module  # Executing before registering here would break dataclasses, among other things
             )
             spec.loader.exec_module(module)
-            bots[bot_id] = module.SPEC
+            bots[bot_id] = dataclasses.replace(module.SPEC, bot_id=bot_id)
         except Exception:
             if module_cached is None:  # Don't discard previously working version
                 sys.modules.pop(module_id, None)

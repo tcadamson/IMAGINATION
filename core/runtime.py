@@ -32,6 +32,11 @@ class FinishedEvent(Event):
 
 
 @dataclasses.dataclass(frozen=True)
+class AbortedEvent(Event):
+    """A workflow was intentionally halted by the user."""
+
+
+@dataclasses.dataclass(frozen=True)
 class CrashedEvent(Event):
     """A workflow raised an unhandled exception."""
 
@@ -104,6 +109,9 @@ class Scheduler:
 
             try:
                 handoff = next(workflow)
+            except core.api.Aborted:
+                self._emit(assignment.label, AbortedEvent())
+                continue
             except StopIteration:
                 self._emit(assignment.label, FinishedEvent())
                 continue
@@ -143,6 +151,8 @@ def log_event(label: str, event: Event) -> None:
     match event:
         case HandoffEvent(reason=reason):
             _logger.debug("%s handoff: %s", label, reason)
+        case AbortedEvent():
+            _logger.info("%s aborted by user", label)
         case FinishedEvent():
             _logger.info("%s finished", label)
         case CrashedEvent(exception=exception):

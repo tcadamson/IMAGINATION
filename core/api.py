@@ -24,13 +24,15 @@ type _Padding = int | tuple[int, int]
 DEFAULT_CONFIDENCE: typing.Final = 0.85
 DEFAULT_SLEEP: typing.Final = 0.08
 
+_TEMPLATE_SPEC_DEFAULTS: typing.Final[
+    collections.abc.Mapping[str, TemplateSpec]
+] = {}  # TODO: Maybe allow bots to seed this directly so adjustments don't require a client update
+
 ROOT_DIRECTORY: typing.Final = (
     pathlib.Path(sys.executable).resolve().parent
     if getattr(sys, "frozen", False)
     else pathlib.Path(__file__).resolve().parents[1]
 )
-
-_TEMPLATE_OVERRIDES: typing.Final[collections.abc.Mapping[str, TemplateSpec]] = {}
 
 pydirectinput.PAUSE = DEFAULT_SLEEP
 pydirectinput.FAILSAFE = False  # Use client window focus as the failsafe
@@ -123,12 +125,21 @@ class Handoff:
 
 @dataclasses.dataclass(frozen=True)
 class BotSpec:
-    """Bot definition pairing `bot_config_type` with its workflow factory."""
+    """Bot definition; the config type and workflow are derived from `bot_type`."""
 
-    bot_id: str
-    bot_config_type: type[BotConfig]
-    workflow: collections.abc.Callable[[Session, BotConfig], Workflow]
+    bot_type: type[Bot]
+    bot_id: str = dataclasses.field(default="", kw_only=True)
     help: str = dataclasses.field(default="", kw_only=True)
+
+    @property
+    def workflow(self) -> collections.abc.Callable[[Session, BotConfig], Workflow]:
+        """Workflow factory, inherited from `Bot` unless overridden."""
+        return self.bot_type.workflow
+
+    @property
+    def bot_config_type(self) -> type[BotConfig]:
+        """Config type from the `bot_config` annotation, or base `BotConfig`."""
+        return typing.get_type_hints(self.bot_type).get("bot_config", BotConfig)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -175,13 +186,22 @@ class TemplateMatch:
 
 @dataclasses.dataclass(frozen=True, eq=False)
 class LocateParams:
-    """Immutable locate parameters."""
+    """Immutable locate parameters.
+
+    Note that `region_padding` is scaled at locate time and should not be scaled
+    manually.
+    """
 
     region: Rect | None = None
     region_padding: _Padding = 0
     region_cache_id: str | None = None
     mask: numpy.ndarray | None = None
     confidence: float | None = None
+
+
+_DIALOGUE_ARROW_PARAMS: typing.Final[LocateParams] = LocateParams(
+    region_padding=(400, 50)
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -191,6 +211,10 @@ class ClickParams:
     button: str = pydirectinput.MOUSE_PRIMARY
     count: int = 1
     pause: bool = True
+
+
+class Aborted(Exception):
+    """The user intentionally halted a workflow by losing client focus."""
 
 
 class Bot(abc.ABC):
@@ -207,8 +231,23 @@ class Bot(abc.ABC):
         """
 
     @abc.abstractmethod
+    def cycle_logic(self) -> Workflow:
+        """Perform one unit of work, yielding at safe intra/inter-cycle boundaries."""
+
     def cycle(self) -> Workflow:
-        """Yield a handoff at each safe boundary."""
+        """Yield a handoff at each boundary."""
+        cycles_completed = 0
+        while True:
+            result = self.cycle_logic()
+
+            if result is not None:
+                yield from result
+
+            cycles_completed += 1
+            yield Handoff(f"cycle {cycles_completed}")
+
+            if cycles_completed >= self.bot_config.cycles_limit > 0:
+                return
 
     @classmethod
     def workflow(cls, session: Session, bot_config: BotConfig) -> Workflow:
@@ -398,7 +437,9 @@ class TemplateMatcher:
             )
 
         if spec is None:
-            spec = _TEMPLATE_OVERRIDES.get(template_id, TemplateSpec(self._confidence))
+            spec = _TEMPLATE_SPEC_DEFAULTS.get(
+                template_id, TemplateSpec(self._confidence)
+            )
 
         if spec.grayscale:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -425,7 +466,7 @@ class TemplateMatcher:
 
             self._register_template(filename.stem, frame)
 
-    def region_cached(
+    def get_region_cached(
         self, template_id: str, *, region_cache_id: str | None = None
     ) -> Rect | None:
         """Return the cached region for an associated template, if it exists.
@@ -434,6 +475,14 @@ class TemplateMatcher:
         appearing in multiple locations.
         """
         return self._region_cache.get((template_id, region_cache_id))
+
+    def _scaled_padding(self, padding: _Padding) -> _Padding:
+        """Scale hand-authored padding to the client's scale factor."""
+        if isinstance(padding, int):
+            return round(padding * self._scale)
+
+        dx, dy = padding
+        return round(dx * self._scale), round(dy * self._scale)
 
     def _locate(
         self,
@@ -483,6 +532,7 @@ class TemplateMatcher:
         ):
             return None
 
+        _logger.debug("Matched %s@%.6f", template_id, max_val)
         rect_in_client_space = Rect(
             x1 + max_loc[0], y1 + max_loc[1], template_width, template_height
         )
@@ -506,7 +556,7 @@ class TemplateMatcher:
             )
 
         region_cache_key = (template_id, locate_params.region_cache_id)
-        region_cached = self.region_cached(
+        region_cached = self.get_region_cached(
             template_id, region_cache_id=locate_params.region_cache_id
         )
 
@@ -514,7 +564,9 @@ class TemplateMatcher:
             return self._locate(
                 frame,
                 template_id,
-                region_cached.inflate(locate_params.region_padding),
+                region_cached.inflate(
+                    self._scaled_padding(locate_params.region_padding)
+                ),
                 locate_params.mask,
                 locate_params.confidence,
             )
@@ -588,12 +640,16 @@ class Session:
     def _guard(self, *points: Point) -> None:
         """Assert the client has focus and all `points` are inside of it."""
         if not self.client.is_focused:
-            raise RuntimeError("IMAGINE client window lost focus.")
+            raise Aborted
 
         client_rect = self.client.rect
         for point in points:
             if not client_rect.contains(point):
                 raise RuntimeError(f"Point outside client: {point} {client_rect}")
+
+    def scaled(self, *values: float) -> tuple[int, ...]:
+        """Scale hand-authored pixel offsets by the client's scale factor."""
+        return tuple(round(value * self.scale) for value in values)
 
     def observe(self) -> Observation:
         """Observe a fresh client capture."""
@@ -608,7 +664,7 @@ class Session:
         *,
         on_condition_failed: collections.abc.Callable[[Observation], None]
         | None = None,
-        timeout: float = 7.5,
+        timeout: float | None = None,
         sleep: float = 0.0,
     ) -> tuple[Observation, T]:
         """Poll observations until `condition` succeeds or the `timeout` expires.
@@ -618,8 +674,8 @@ class Session:
 
         Raises on timeout.
         """
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while deadline is None or time.monotonic() < deadline:
             observation = self.observe()
             result = condition(observation)
 
@@ -633,10 +689,37 @@ class Session:
                 time.sleep(sleep)
         raise TimeoutError("Timed out waiting on observation condition.")
 
+    @staticmethod
+    def present(
+        template_ids: str | tuple[str, ...],
+        locate_params: LocateParams = LocateParams(),
+    ) -> collections.abc.Callable[[Observation], TemplateMatch | None]:
+        """Predicate that holds while any of `template_ids` are on screen."""
+        if isinstance(template_ids, str):
+            template_ids = (template_ids,)
+
+        return lambda observation: observation.locate_any(
+            template_ids, locate_params=locate_params
+        )
+
+    @staticmethod
+    def absent(
+        template_ids: str | tuple[str, ...],
+        locate_params: LocateParams = LocateParams(),
+    ) -> collections.abc.Callable[[Observation], bool]:
+        """Predicate that holds while none of `template_ids` are on screen."""
+        return lambda observation: (
+            Session.present(template_ids, locate_params)(observation) is None
+        )
+
     def move(self, point: Point) -> None:
         """Guard client focus and bounds, then move the cursor to the `point`."""
         self._guard(point)
         Actions.move(point)
+
+    def move_center(self) -> None:
+        """Convenience method to move the cursor to the client center."""
+        self.move(self.client.rect.center)
 
     def click(self, point: Point, click_params: ClickParams = ClickParams()) -> None:
         """Guard client focus and bounds, then click at the `point`."""
@@ -689,15 +772,17 @@ class Session:
     ) -> tuple[Observation, T]:
         """Click the template on an `interval` until the `condition` succeeds.
 
-        The template is clicked at most once per `interval` seconds while
-        polling. Returns once `condition` returns a truthy result.
+        The template is clicked at most once per `interval` seconds while polling, and
+        must be clicked at least once. Returns once `condition` returns a truthy
+        result.
 
         Raises on timeout.
         """
         last_click_time = 0.0
+        clicked = False
 
         def click_attempt(observation: Observation) -> None:
-            nonlocal last_click_time
+            nonlocal last_click_time, clicked
 
             if time.monotonic() - last_click_time < interval:
                 return
@@ -712,8 +797,39 @@ class Session:
                 is not None
             ):
                 last_click_time = time.monotonic()
+                clicked = True
 
-        return self.observe_until(condition, on_condition_failed=click_attempt)
+        def gated_condition(observation: Observation) -> T | None:
+            return condition(observation) if clicked else None
+
+        return self.observe_until(gated_condition, on_condition_failed=click_attempt)
+
+    def click_through(
+        self,
+        template_id: str,
+        locate_params: LocateParams = LocateParams(),
+    ) -> None:
+        """Click `template_id` until it leaves the frame."""
+        self.click_template_until(
+            template_id,
+            self.absent(template_id, locate_params),
+            locate_params=locate_params,
+        )
+
+    def click_through_dialogue_until(
+        self,
+        template_ids: str | tuple[str, ...],
+        locate_params: LocateParams = LocateParams(),
+    ) -> tuple[Observation, TemplateMatch]:
+        """Click the frame center until one of `template_ids` appears."""
+        return self.observe_until(
+            self.present(template_ids, locate_params),
+            on_condition_failed=lambda observation: (
+                self.click(observation.rect.center)
+                if self.present("dialogue_arrow", _DIALOGUE_ARROW_PARAMS)(observation)
+                else None
+            ),
+        )
 
     def drag(self, point: Point, dx: int, dy: int, **drag_kwargs) -> None:
         """Guard client focus and bounds, then drag from `point` by given deltas."""

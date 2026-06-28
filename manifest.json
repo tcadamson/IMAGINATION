@@ -1,4 +1,18 @@
 {
-    "bots/rebirth.py": "98a7b916c01427fff527a574a6822af96624af95f1f138c9a6a5ad20109c4d3b",
-    "templates/quit.png": "9763e46beb63dadc51fcee632d5f601a2f44c32868a50197c2ae56b1bf0fdbd6"
+    "bots/tmg.py": "f713fac843bb645a0cb6c0fd6be5749a144d549e10cbef74a4c89894e35066f0",
+    "templates/dialogue_arrow.png": "d86fc52195822f4f03a3cca558222f17e292995423ae146e506c3f4fa6e9d546",
+    "templates/info.png": "b9aedf7df821fd1ddbad1579dae1442f06e68dab3add921a305ffffb4ff2c2b4",
+    "templates/take_all.png": "09538464f44f93540a825d1946f2e110bec51150e7806506a4cb19e370356a0a",
+    "templates/tmg/dungeon_mode_banner.png": "7f95b63cc34ce5b0294949aed81bcb69289044961001e23f9592128488ab7c48",
+    "templates/tmg/exit_lucifuge_banner.png": "bc055e999a31717096139a43c28b62ebf85f0c4a39566af31ef2f3a75b848827",
+    "templates/tmg/go_to_lucifuge_banner.png": "b9c0e54a2f7c009c4f66f69bfd1065757a027fb3e3254ac66ecb736c3451e74c",
+    "templates/tmg/go_to_roof.png": "78540cb43a5bd7f4c74c8bff467e273dc1a522c03995a215e764d9d60d5296a3",
+    "templates/tmg/go_to_roof_banner.png": "9fbf230142a2099cf87a4c8c7de1199b78d24d28ca07517ede67aa67dcad8a48",
+    "templates/tmg/go_to_top_floor.png": "abc338b0f669967f568ca9e2953967ab3b341caf9494f9ce26af19aa041a0b35",
+    "templates/tmg/go_to_top_floor_banner.png": "05c7da42d7340610b231b9eca0843d4f8b67df718739e99c3cc71ca1eb079956",
+    "templates/tmg/normal.png": "9a605584dc76bcedbdf77b0bcc74c8b9a1959d5f35029f0bee5ff7fbcee4a382",
+    "templates/tmg/remove_all_ghosts.png": "fbd808cf9928d46026bf1909bdb8d26649b49127540ee19bf352faece5a31ca9",
+    "templates/tmg/show_grimoire_1.png": "1359c7c6b00d66aaa4856b033b679da40ad0b3ff7d803bad303c3b8acab220f4",
+    "templates/tmg/show_grimoire_2.png": "f18750b8a7fefd1bd63abf5118b6b4c0bdfc9d2c0c79641e0a1aac3ca569a323",
+    "templates/yes.png": "428ea5e09fd6015769b481b67977de56a8a338b340cb462dcd926699e742f246"
 }
