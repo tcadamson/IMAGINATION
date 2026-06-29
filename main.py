@@ -57,6 +57,9 @@ _cli = typer.Typer(
     no_args_is_help=True,
 )
 _cli_run = typer.Typer(no_args_is_help=True)
+_cli_presets = typer.Typer(no_args_is_help=True)
+
+_preset_names: set[str] = set()
 
 _group: typer.core.TyperGroup | None = None
 
@@ -82,6 +85,59 @@ def _cli_run_callback(
     ctx.obj = core.api.RunConfig(confidence=confidence, sleep=sleep)
 
 
+@_cli_presets.callback()
+def _cli_presets_callback() -> None:
+    """Manage command presets.
+
+    To edit existing presets and/or add your own, edit presets.json at
+    %LOCALAPPDATA%\\IMAGINATION
+    """
+
+
+@_cli_presets.command(name="list")
+def _cli_presets_list() -> None:
+    """List available presets."""
+    presets = core.config.load_presets()
+
+    if not presets:
+        print(f"No presets defined in {core.config.PRESETS_PATH}")
+        return
+
+    for preset_id, line in presets.items():
+        print(f"{preset_id.lower()}: {line}")
+
+
+@_cli_presets.command(name="load")
+def _cli_presets_load() -> None:
+    """Load any presets on disk and register them as commands."""
+    presets = core.config.load_presets()
+
+    # Drop previously registered presets to reflect recent edits
+    _cli.registered_commands = [
+        command
+        for command in _cli.registered_commands
+        if command.name not in _preset_names
+    ]
+    _preset_names.clear()
+
+    reserved = set(name.lower() for name in typer.main.get_group(_cli).commands)
+    for preset_id, line in presets.items():
+        preset_id = preset_id.lower()
+
+        if preset_id in reserved:
+            print(f"Skipping preset with reserved name: {preset_id}")
+            continue
+
+        _cli.command(name=preset_id, help=line)(_generate_preset_command(line))
+        _preset_names.add(preset_id)
+        reserved.add(preset_id)
+
+    global _group
+    _group = typer.main.get_group(_cli)
+
+    logging.info(f"Loaded {len(_preset_names)} preset(s)")
+
+
 @_cli.callback(help=None)
 def _cli_callback() -> None:
     """IMAGINATION interactive console."""
@@ -104,7 +160,7 @@ def update() -> None:
     for spec in core.registry.register_bot_directory(
         core.config.BOT_DIRECTORY, stale_bot_ids
     ).values():
-        _cli_run.command(name=spec.bot_id, help=spec.help)(_generate_command(spec))
+        _cli_run.command(name=spec.bot_id, help=spec.help)(_generate_run_command(spec))
 
     global _group
     _group = typer.main.get_group(_cli)
@@ -147,7 +203,21 @@ def _launch(
     scheduler.run()
 
 
-def _generate_command(spec: core.api.BotSpec):
+def _dispatch(args: collections.abc.Sequence[str]) -> None:
+    """Dispatch console `args` through the active command group."""
+    typing.cast(typer.core.TyperGroup, _group).main(args=args, prog_name="")
+
+
+def _generate_preset_command(line: str):
+    """Build a typer command that populates the command line with a saved preset."""
+
+    def command() -> None:
+        _dispatch(shlex.split(line))
+
+    return command
+
+
+def _generate_run_command(spec: core.api.BotSpec):
     """Build a typer command exposing config fields in `spec` as CLI options."""
     params = [
         inspect.Parameter(
@@ -194,15 +264,12 @@ if __name__ == "__main__":
             ),
         ],
     )
+    _cli.add_typer(_cli_presets, name="presets")
     _cli.add_typer(_cli_run, name="run")
     _guard(update)
-    group = typing.cast(
-        typer.core.TyperGroup, _group
-    )  # Make type narrowing visible to lambda scopes by assigning to new local
+    _guard(_cli_presets_load)
     print(_BANNER)
-    _guard(
-        lambda: group.main(args=("--help",), prog_name="")
-    )  # Print help message on initial launch
+    _guard(lambda: _dispatch(("--help",)))
 
     while True:
         print()
@@ -215,4 +282,4 @@ if __name__ == "__main__":
         if response == "":
             continue
 
-        _guard(lambda: group.main(args=shlex.split(response), prog_name=""))
+        _guard(lambda: _dispatch(shlex.split(response)))

@@ -139,7 +139,8 @@ def sync(manifest: Manifest | None = None) -> set[str]:
 
         if (
             destination.is_file()
-            and hashlib.sha256(destination.read_bytes()).hexdigest() == sha256_expected
+            and destination == core.config.PRESETS_PATH
+            or hashlib.sha256(destination.read_bytes()).hexdigest() == sha256_expected
         ):
             continue
 

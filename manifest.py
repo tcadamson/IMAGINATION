@@ -14,6 +14,7 @@ _MANIFEST_PATH: typing.Final = core.api.ROOT_DIRECTORY / "manifest.json"
 
 if __name__ == "__main__":
     paths = [
+        # core.api.ROOT_DIRECTORY / "presets.json",
         *sorted((core.api.ROOT_DIRECTORY / "bots").glob("*.py")),
         *(
             path
