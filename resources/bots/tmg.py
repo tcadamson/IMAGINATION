@@ -14,10 +14,10 @@ class TMGBotConfig(core.api.BotConfig):
 class TMGBot(core.api.Bot):
     bot_config: TMGBotConfig
 
-    def _banner_option_params(
+    def _sentinel_option_params(
         self, template_match: core.api.TemplateMatch, region_cache_id: str | None = None
     ) -> core.api.LocateParams:
-        """Return locate params for the option below a matched banner."""
+        """Return locate params for the option below a matched sentinel."""
         return core.api.LocateParams(
             region=template_match.rect.relative(
                 -5, template_match.rect.height, *self.session.scaled(150, 75)
@@ -28,9 +28,11 @@ class TMGBot(core.api.Bot):
     def cycle_logic(self) -> None:
         # Go to top floor
         _, template_match = self.session.observe_until(
-            self.session.present("dungeon_mode_banner")
+            self.session.present("dungeon_mode_sentinel")
         )
-        self.session.click_through("normal", self._banner_option_params(template_match))
+        self.session.click_through(
+            "normal", self._sentinel_option_params(template_match)
+        )
         self.session.click_through("yes")
         self.session.move_center()
         self.session.observe_until(
@@ -39,10 +41,10 @@ class TMGBot(core.api.Bot):
         self.session.click_through_dialogue_until("show_grimoire_1")
         self.session.click_through("show_grimoire_1")
         _, template_match = self.session.click_through_dialogue_until(
-            "go_to_top_floor_banner"
+            "go_to_top_floor_sentinel"
         )
         self.session.click_through(
-            "go_to_top_floor", self._banner_option_params(template_match)
+            "go_to_top_floor", self._sentinel_option_params(template_match)
         )
         self.session.move_center()
 
@@ -61,19 +63,19 @@ class TMGBot(core.api.Bot):
         self.session.click_through_dialogue_until("go_to_roof")
         self.session.click_through("go_to_roof")
         _, template_match = self.session.click_through_dialogue_until(
-            "go_to_roof_banner"
+            "go_to_roof_sentinel"
         )
         self.session.click_through(
-            "yes", self._banner_option_params(template_match, "yes_yagishima")
+            "yes", self._sentinel_option_params(template_match, "yes_yagishima")
         )
         self.session.move_center()
 
         # Go to lucifuge
         _, template_match = self.session.observe_until(
-            self.session.present("go_to_lucifuge_banner")
+            self.session.present("go_to_lucifuge_sentinel")
         )
         self.session.click_through(
-            "yes", self._banner_option_params(template_match, "yes_roof")
+            "yes", self._sentinel_option_params(template_match, "yes_roof")
         )
         self.session.move_center()
 
@@ -88,10 +90,10 @@ class TMGBot(core.api.Bot):
         self.session.click_template("take_all")
         self.session.move_center()
         _, template_match = self.session.observe_until(
-            self.session.present("exit_lucifuge_banner")
+            self.session.present("exit_lucifuge_sentinel")
         )
         self.session.click_through(
-            "yes", self._banner_option_params(template_match, "yes_leave")
+            "yes", self._sentinel_option_params(template_match, "yes_leave")
         )
         self.session.move_center()
 
