@@ -157,6 +157,7 @@ class RunConfig:
 
     confidence: float = DEFAULT_CONFIDENCE
     sleep: float = DEFAULT_SLEEP
+    scale: float | None = None
 
 
 @dataclasses.dataclass(frozen=True, eq=False)

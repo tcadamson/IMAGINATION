@@ -134,7 +134,7 @@ def _assign(bind: Bind, run_config: core.api.RunConfig) -> BotAssignment:
         core.api.TemplateMatcher.from_template_directory(
             core.paths.TEMPLATE_DIRECTORY,
             bot_id=bind.spec.bot_id,
-            scale=scale,
+            scale=run_config.scale if run_config.scale is not None else scale,
             confidence=run_config.confidence,
         ),
         scale,
