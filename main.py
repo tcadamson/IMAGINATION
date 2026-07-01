@@ -150,13 +150,15 @@ def update() -> None:
     Automatically runs once on program launch.
     """
     _cli_run.registered_commands = []
-
     print("Checking for updates...")
-    stale_bot_ids = (
-        set() if core.config.USER_DIRECTORY_OVERRIDE_PASSED else core.registry.sync()
-    )
-    print("Done.")
 
+    if core.config.USER_DIRECTORY_OVERRIDE_PASSED:
+        stale_bot_ids = set()
+    else:
+        core.config.migrate()
+        stale_bot_ids = core.registry.sync()
+
+    print("Done.")
     for spec in core.registry.register_bot_directory(
         core.config.BOT_DIRECTORY, stale_bot_ids
     ).values():

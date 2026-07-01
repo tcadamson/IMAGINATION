@@ -6,7 +6,7 @@ to be determined via `sys.base_prefix`.
 
 As added convenience, the project name and version may be retrieved dynamically.
 
-Run with `uv run python build.py build`.
+Run with `uv run python -m scripts.build build`.
 """
 
 import collections.abc
@@ -39,7 +39,7 @@ _DEFAULT_BIN_EXCLUDES: typing.Final = (
     "ucrtbase.dll",
 )
 
-with open(pathlib.Path(__file__).parent / "pyproject.toml", "rb") as fp:
+with open(pathlib.Path(__file__).parents[1] / "pyproject.toml", "rb") as fp:
     PROJECT: typing.Final[collections.abc.Mapping[str, typing.Any]] = tomllib.load(fp)[
         "project"
     ]
@@ -65,7 +65,7 @@ cx_Freeze.setup(
     },
 )
 
-for egg_info in pathlib.Path(__file__).parent.glob("*.egg-info"):
+for egg_info in pathlib.Path(__file__).parents[1].glob("*.egg-info"):
     shutil.rmtree(egg_info, ignore_errors=True)
 
 frozen_application_license = BUILD_DIRECTORY / "frozen_application_license.txt"

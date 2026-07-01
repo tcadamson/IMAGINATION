@@ -26,7 +26,7 @@ _logger: logging.Logger = logging.getLogger(__name__)
 
 
 def _request_manifest(
-    url: str = _ROOT_URL + "manifest.json", timeout: float = 10.0
+    url: str = _ROOT_URL + "resources/manifest.json", timeout: float = 10.0
 ) -> Manifest:
     """Fetch and parse the bot manifest from `url`."""
     with urllib.request.urlopen(url, timeout=timeout) as response:
@@ -131,7 +131,7 @@ def sync(manifest: Manifest | None = None) -> set[str]:
     for relative_path in sorted(
         manifest,
         key=lambda path: path.startswith(
-            f"{core.config.BOT_DIRECTORY.name}/"
+            f"{core.config.BOT_DIRECTORY.relative_to(core.config.USER_DIRECTORY).as_posix()}/"
         ),  # Sort templates before the bots depending on them
     ):
         destination = _destination(relative_path)
