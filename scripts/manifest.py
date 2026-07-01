@@ -15,22 +15,22 @@ import core.api
 _MANIFEST_PATH: typing.Final = core.api.ROOT_DIRECTORY / "resources" / "manifest.json"
 
 if __name__ == "__main__":
-    relative_paths = [
-        # core.api.ROOT_DIRECTORY / "presets.json",
+    paths = [
+        core.api.ROOT_DIRECTORY / "resources" / "presets.default.json",
         *sorted((core.api.ROOT_DIRECTORY / "resources" / "bots").glob("*.py")),
         *(
-            relative_path
-            for relative_path in sorted(
+            path
+            for path in sorted(
                 (core.api.ROOT_DIRECTORY / "resources" / "templates").rglob("*")
             )
-            if relative_path.is_file()
+            if path.is_file()
         ),
     ]
     manifest = {
-        relative_path.relative_to(core.api.ROOT_DIRECTORY).as_posix(): hashlib.sha256(
-            relative_path.read_bytes()
+        path.relative_to(core.api.ROOT_DIRECTORY).as_posix(): hashlib.sha256(
+            path.read_bytes()
         ).hexdigest()
-        for relative_path in relative_paths
+        for path in paths
     }
     with _MANIFEST_PATH.open("w", encoding="utf-8", newline="\n") as fp:
         json.dump(manifest, fp, indent=4, sort_keys=True)

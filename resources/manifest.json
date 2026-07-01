@@ -1,5 +1,6 @@
 {
     "resources/bots/tmg.py": "24c20a6b7db05cc7dcce45912ae20e268b8176ea3167575efe7824ddbe2ce9c5",
+    "resources/presets.default.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
     "resources/templates/dialogue_arrow.png": "d86fc52195822f4f03a3cca558222f17e292995423ae146e506c3f4fa6e9d546",
     "resources/templates/info.png": "b9aedf7df821fd1ddbad1579dae1442f06e68dab3add921a305ffffb4ff2c2b4",
     "resources/templates/take_all.png": "09538464f44f93540a825d1946f2e110bec51150e7806506a4cb19e370356a0a",

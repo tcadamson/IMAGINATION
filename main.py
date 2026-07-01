@@ -90,7 +90,7 @@ def _cli_presets_callback() -> None:
     """Manage command presets.
 
     To edit existing presets and/or add your own, edit presets.json at
-    %LOCALAPPDATA%\\IMAGINATION
+    %LOCALAPPDATA%\\IMAGINATION\\resources\\
     """
 
 
@@ -156,6 +156,7 @@ def update() -> None:
         stale_bot_ids = set()
     else:
         core.config.migrate()
+        core.config.ensure_presets()
         stale_bot_ids = core.registry.sync()
 
     print("Done.")
