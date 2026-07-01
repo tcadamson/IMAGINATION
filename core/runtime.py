@@ -8,7 +8,7 @@ import threading
 import pydirectinput
 
 import core.api
-import core.config
+import core.paths
 
 type OnEvent = collections.abc.Callable[[str, Event], None]
 
@@ -132,7 +132,7 @@ def _assign(bind: Bind, run_config: core.api.RunConfig) -> BotAssignment:
     session = core.api.Session(
         bind.client,
         core.api.TemplateMatcher.from_template_directory(
-            core.config.TEMPLATE_DIRECTORY,
+            core.paths.TEMPLATE_DIRECTORY,
             bot_id=bind.spec.bot_id,
             scale=scale,
             confidence=run_config.confidence,

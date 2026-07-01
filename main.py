@@ -13,7 +13,8 @@ import typer
 import typer.core
 
 import core.api
-import core.config
+import core.paths
+import core.presets
 import core.registry
 import core.runtime
 
@@ -97,10 +98,10 @@ def _cli_presets_callback() -> None:
 @_cli_presets.command(name="list")
 def _cli_presets_list() -> None:
     """List available presets."""
-    presets = core.config.load_presets()
+    presets = core.presets.load_presets()
 
     if not presets:
-        print(f"No presets defined in {core.config.PRESETS_PATH}")
+        print(f"No presets defined in {core.presets.PRESETS_PATH}")
         return
 
     for preset_id, line in presets.items():
@@ -110,7 +111,7 @@ def _cli_presets_list() -> None:
 @_cli_presets.command(name="load")
 def _cli_presets_load() -> None:
     """Load any presets on disk and register them as commands."""
-    presets = core.config.load_presets()
+    presets = core.presets.load_presets()
 
     # Drop previously registered presets to reflect recent edits
     _cli.registered_commands = [
@@ -152,16 +153,16 @@ def update() -> None:
     _cli_run.registered_commands = []
     print("Checking for updates...")
 
-    if core.config.USER_DIRECTORY_OVERRIDE_PASSED:
+    if core.paths.USER_DIRECTORY_OVERRIDE_PASSED:
         stale_bot_ids = set()
     else:
-        core.config.migrate()
-        core.config.ensure_presets()
+        core.paths.migrate()
+        core.presets.ensure_presets()
         stale_bot_ids = core.registry.sync()
 
     print("Done.")
     for spec in core.registry.register_bot_directory(
-        core.config.BOT_DIRECTORY, stale_bot_ids
+        core.paths.BOT_DIRECTORY, stale_bot_ids
     ).values():
         _cli_run.command(name=spec.bot_id, help=spec.help)(_generate_run_command(spec))
 
@@ -263,7 +264,7 @@ if __name__ == "__main__":
         handlers=[
             logging.StreamHandler(),
             logging.FileHandler(
-                core.config.USER_DIRECTORY / "debug.log", encoding="utf-8"
+                core.paths.USER_DIRECTORY / "debug.log", encoding="utf-8"
             ),
         ],
     )

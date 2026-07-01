@@ -14,7 +14,7 @@ import typing
 import urllib.request
 
 import core.api
-import core.config
+import core.paths
 
 type Manifest = dict[str, str]
 
@@ -54,7 +54,7 @@ def _destination(relative_path: str) -> pathlib.Path:
     if path.is_absolute() or ".." in path.parts:
         raise ValueError(f"Unsafe path in manifest.json: {relative_path!r}")
 
-    return core.config.USER_DIRECTORY / path
+    return core.paths.USER_DIRECTORY / path
 
 
 def _atomic_write(path: pathlib.Path, data: bytes) -> None:
@@ -131,7 +131,7 @@ def sync(manifest: Manifest | None = None) -> set[str]:
     for relative_path in sorted(
         manifest,
         key=lambda path: path.startswith(
-            f"{core.config.BOT_DIRECTORY.relative_to(core.config.USER_DIRECTORY).as_posix()}/"
+            f"{core.paths.BOT_DIRECTORY.relative_to(core.paths.USER_DIRECTORY).as_posix()}/"
         ),  # Sort templates before the bots depending on them
     ):
         destination = _destination(relative_path)
