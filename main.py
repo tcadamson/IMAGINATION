@@ -178,11 +178,7 @@ def _error_dialog(exception: BaseException) -> None:
     """Surface `exception` as a dialog above the active client."""
     ctypes.windll.user32.MessageBoxW(
         None,
-        "".join(
-            traceback.format_exception(
-                type(exception), exception, exception.__traceback__
-            )
-        ),
+        "".join(traceback.format_exception_only(type(exception), exception)),
         "IMAGINATION",
         0x10 | 0x00001000,  # MB_ICONERROR | MB_SYSTEMMODAL
     )
