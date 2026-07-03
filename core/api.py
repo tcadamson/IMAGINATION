@@ -5,6 +5,7 @@ import collections.abc
 import ctypes
 import ctypes.wintypes
 import dataclasses
+import json
 import logging
 import pathlib
 import sys
@@ -17,16 +18,12 @@ import numpy
 import pydirectinput
 import pywinctl
 
-type Workflow = collections.abc.Iterator[Handoff]
-
 type _Padding = int | tuple[int, int]
+
+type Workflow = collections.abc.Iterator[Handoff]
 
 DEFAULT_CONFIDENCE: typing.Final = 0.85
 DEFAULT_SLEEP: typing.Final = 0.08
-
-_TEMPLATE_SPEC_DEFAULTS: typing.Final[
-    collections.abc.Mapping[str, TemplateSpec]
-] = {}  # TODO: Maybe allow bots to seed this directly so adjustments don't require a client update
 
 ROOT_DIRECTORY: typing.Final = (
     pathlib.Path(sys.executable).resolve().parent
@@ -67,18 +64,18 @@ class Rect:
     height: int
 
     @classmethod
-    def from_bounds(cls, left: int, top: int, right: int, bottom: int) -> Rect:
-        """Create rectangle from `left`, `top`, `right`, and `bottom` bounds."""
-        return cls(left, top, right - left, bottom - top)
+    def from_bounds(cls, x1: int, y1: int, x2: int, y2: int) -> Rect:
+        """Create rectangle from `x1`, `y1`, `x2`, and `y2` bounds."""
+        return cls(x1, y1, x2 - x1, y2 - y1)
 
     @property
     def bounds(self) -> tuple[int, int, int, int]:
-        """Rectangle as left, top, right, and bottom bounds."""
+        """Rectangle as x1, y1, x2, and y2 bounds."""
         return (self.x, self.y, self.x + self.width, self.y + self.height)
 
     @property
     def origin(self) -> Point:
-        """Origin (top-left) point of the rectangle."""
+        """Origin point of the rectangle."""
         return Point(self.x, self.y)
 
     @property
@@ -114,6 +111,17 @@ class Rect:
         Calculated relative to origin, not center.
         """
         return Rect(self.origin.x + dx, self.origin.y + dy, width, height)
+
+    def clamp(self, width: int, height: int) -> Rect:
+        """Return this rectangle clipped to (`width`, `height`) bounds at the origin.
+
+        A rectangle lying fully outside the bounds clamps to zero extent rather than a
+        negative one.
+        """
+        x1, y1, x2, y2 = self.bounds
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(width, x2), min(height, y2)
+        return Rect.from_bounds(x1, y1, max(x1, x2), max(y1, y2))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -172,8 +180,29 @@ class Template:
 class TemplateSpec:
     """Immutable template spec."""
 
-    confidence: float
+    confidence: float | None = None
     grayscale: bool = True
+
+
+def _load_template_specs(template_directory: pathlib.Path) -> dict[str, TemplateSpec]:
+    """Parse specs colocated in `template_directory` into specs keyed by template.
+
+    Absent file means no overrides. Tracked from the repo, so a template's spec can be
+    updated without a client release.
+    """
+    path = template_directory / "specs.json"
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError as exception:
+        raise RuntimeError(f"Malformed JSON at {path}") from exception
+
+    try:
+        return {template_id: TemplateSpec(**spec) for template_id, spec in data.items()}
+    except TypeError as exception:
+        raise RuntimeError(f"Invalid spec at {path}") from exception
 
 
 @dataclasses.dataclass(frozen=True)
@@ -196,7 +225,7 @@ class LocateParams:
     region: Rect | None = None
     region_padding: _Padding = 0
     region_cache_id: str | None = None
-    mask: numpy.ndarray | None = None
+    masks: tuple[Rect, ...] = ()
     confidence: float | None = None
 
 
@@ -219,7 +248,7 @@ class Aborted(Exception):
 
 
 class Bot(abc.ABC):
-    """Abstract base for bots; subclasses implement `cycle` and may override `load`."""
+    """Abstract base for bots; subclasses implement `cycle` and override `setup`."""
 
     def __init__(self, session: Session, bot_config: BotConfig):
         self.session = session
@@ -232,7 +261,7 @@ class Bot(abc.ABC):
         """
 
     @abc.abstractmethod
-    def cycle_logic(self) -> Workflow:
+    def cycle_logic(self) -> Workflow | None:
         """Perform one unit of work, yielding at safe intra/inter-cycle boundaries."""
 
     def cycle(self) -> Workflow:
@@ -422,25 +451,18 @@ class TemplateMatcher:
 
         return template_matcher
 
-    def _register_template(
-        self, template_id: str, frame: numpy.ndarray, spec: TemplateSpec | None = None
+    def register_template(
+        self,
+        template_id: str,
+        frame: numpy.ndarray,
+        *,
+        spec: TemplateSpec | None = None,
     ) -> None:
-        """Register a template PNG and clear any stale cached regions."""
-        if abs(self._scale - 1.0) > 1e-3:
-            template_height, template_width = frame.shape[:2]
-            frame = cv2.resize(
-                frame,
-                (
-                    round(template_width * self._scale),
-                    round(template_height * self._scale),
-                ),
-                interpolation=cv2.INTER_LINEAR,
-            )
+        """Register a template frame and clear any stale cached regions.
 
-        if spec is None:
-            spec = _TEMPLATE_SPEC_DEFAULTS.get(
-                template_id, TemplateSpec(self._confidence)
-            )
+        `frame` is expected to already be at client scale.
+        """
+        spec = spec if spec is not None else TemplateSpec()
 
         if spec.grayscale:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -454,18 +476,38 @@ class TemplateMatcher:
         for region_cache_key in stale:
             del self._region_cache[region_cache_key]
 
+    def _scale_to_client(self, frame: numpy.ndarray) -> numpy.ndarray:
+        """Resize a frame to match the client scale factor."""
+        if abs(self._scale - 1.0) <= 1e-3:
+            return frame
+
+        template_height, template_width = frame.shape[:2]
+        return cv2.resize(
+            frame,
+            (
+                round(template_width * self._scale),
+                round(template_height * self._scale),
+            ),
+            interpolation=cv2.INTER_LINEAR,
+        )
+
     def _register_template_directory(self, template_directory: pathlib.Path) -> None:
         """Register every template PNG in `template_directory`, skipping if it is absent."""
         if not template_directory.is_dir():
             return
 
+        specs = _load_template_specs(template_directory)
         for filename in template_directory.glob("*.png"):
             frame = cv2.imread(str(filename))
 
             if frame is None:
                 raise RuntimeError(f"Template missing or corrupt: {filename}")
 
-            self._register_template(filename.stem, frame)
+            self.register_template(
+                filename.stem,
+                self._scale_to_client(frame),
+                spec=specs.get(filename.stem),
+            )
 
     def get_region_cached(
         self, template_id: str, *, region_cache_id: str | None = None
@@ -490,7 +532,7 @@ class TemplateMatcher:
         frame: numpy.ndarray,
         template_id: str,
         region: Rect | None,
-        mask: numpy.ndarray | None,
+        masks: tuple[Rect, ...],
         confidence: float | None = None,
     ) -> TemplateMatch | None:
         """Attempt to match a single template on the given `frame`.
@@ -503,11 +545,7 @@ class TemplateMatcher:
         if region is None:
             x1, y1, x2, y2 = 0, 0, frame_width, frame_height
         else:
-            x1, y1 = max(0, region.x), max(0, region.y)
-            x2, y2 = (
-                min(frame_width, region.x + region.width),
-                min(frame_height, region.y + region.height),
-            )
+            x1, y1, x2, y2 = region.clamp(frame_width, frame_height).bounds
 
         template = self._templates[template_id]
         template_height, template_width = template.frame.shape[:2]
@@ -517,9 +555,15 @@ class TemplateMatcher:
 
         frame_slice = frame[y1:y2, x1:x2]
 
-        if mask is not None:
+        if masks:
+            frame_mask = numpy.full((frame_height, frame_width), 255, dtype=numpy.uint8)
+            for mask in masks:
+                x1_mask, y1_mask, x2_mask, y2_mask = mask.clamp(
+                    frame_width, frame_height
+                ).bounds
+                frame_mask[y1_mask:y2_mask, x1_mask:x2_mask] = 0
             frame_slice = cv2.bitwise_and(
-                frame_slice, frame_slice, mask=mask[y1:y2, x1:x2]
+                frame_slice, frame_slice, mask=frame_mask[y1:y2, x1:x2]
             )
 
         if template.spec.grayscale:
@@ -528,16 +572,15 @@ class TemplateMatcher:
         result = cv2.matchTemplate(frame_slice, template.frame, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
-        if max_val < (
-            confidence if confidence is not None else template.spec.confidence
-        ):
+        if max_val < (confidence or template.spec.confidence or self._confidence):
             return None
 
         _logger.debug("Matched %s@%.6f", template_id, max_val)
-        rect_in_client_space = Rect(
-            x1 + max_loc[0], y1 + max_loc[1], template_width, template_height
+        return TemplateMatch(
+            template_id,
+            Rect(x1 + max_loc[0], y1 + max_loc[1], template_width, template_height),
+            max_val,
         )
-        return TemplateMatch(template_id, rect_in_client_space, max_val)
 
     def locate(
         self,
@@ -547,37 +590,33 @@ class TemplateMatcher:
         locate_params: LocateParams = LocateParams(),
     ) -> TemplateMatch | None:
         """Attempt to match a single template on the given `frame`."""
-        if locate_params.region is not None:
-            return self._locate(
-                frame,
-                template_id,
-                locate_params.region,
-                locate_params.mask,
-                locate_params.confidence,
+        region = locate_params.region
+        cache = False
+
+        if locate_params.region is None:
+            region_cached = self.get_region_cached(
+                template_id, region_cache_id=locate_params.region_cache_id
             )
 
-        region_cache_key = (template_id, locate_params.region_cache_id)
-        region_cached = self.get_region_cached(
-            template_id, region_cache_id=locate_params.region_cache_id
-        )
-
-        if region_cached is not None:
-            return self._locate(
-                frame,
-                template_id,
-                region_cached.inflate(
+            if region_cached is not None:
+                region = region_cached.inflate(
                     self._scaled_padding(locate_params.region_padding)
-                ),
-                locate_params.mask,
-                locate_params.confidence,
-            )
+                )
+            else:
+                cache = True
 
         template_match = self._locate(
-            frame, template_id, None, locate_params.mask, locate_params.confidence
+            frame,
+            template_id,
+            region,
+            locate_params.masks,
+            locate_params.confidence,
         )
 
-        if template_match is not None:
-            self._region_cache[region_cache_key] = template_match.rect
+        if cache and template_match is not None:
+            self._region_cache[(template_id, locate_params.region_cache_id)] = (
+                template_match.rect
+            )
 
         return template_match
 
@@ -619,6 +658,21 @@ class Observation:
             if template_match is not None:
                 return template_match
         return None
+
+    def register_frame_slice(
+        self, template_id: str, region: Rect, *, spec: TemplateSpec | None = None
+    ) -> None:
+        """Register a slice of this observation's frame as a matchable template.
+
+        `region` is in client-space coordinates and is clamped to the frame bounds. The
+        slice is already at client scale, so it is registered without scaling.
+        """
+        frame_height, frame_width = self.frame.shape[:2]
+        x1, y1, x2, y2 = region.clamp(frame_width, frame_height).bounds
+
+        self._template_matcher.register_template(
+            template_id, self.frame[y1:y2, x1:x2], spec=spec
+        )
 
     def to_screen_space(self, point: Point) -> Point:
         """Convert a client-space `point` to screen space."""
@@ -693,6 +747,7 @@ class Session:
     @staticmethod
     def present(
         template_ids: str | tuple[str, ...],
+        *,
         locate_params: LocateParams = LocateParams(),
     ) -> collections.abc.Callable[[Observation], TemplateMatch | None]:
         """Predicate that holds while any of `template_ids` are on screen."""
@@ -706,11 +761,13 @@ class Session:
     @staticmethod
     def absent(
         template_ids: str | tuple[str, ...],
+        *,
         locate_params: LocateParams = LocateParams(),
     ) -> collections.abc.Callable[[Observation], bool]:
         """Predicate that holds while none of `template_ids` are on screen."""
         return lambda observation: (
-            Session.present(template_ids, locate_params)(observation) is None
+            Session.present(template_ids, locate_params=locate_params)(observation)
+            is None
         )
 
     def move(self, point: Point) -> None:
@@ -808,26 +865,30 @@ class Session:
     def click_through(
         self,
         template_id: str,
+        *,
         locate_params: LocateParams = LocateParams(),
     ) -> None:
         """Click `template_id` until it leaves the frame."""
         self.click_template_until(
             template_id,
-            self.absent(template_id, locate_params),
+            self.absent(template_id, locate_params=locate_params),
             locate_params=locate_params,
         )
 
     def click_through_dialogue_until(
         self,
         template_ids: str | tuple[str, ...],
+        *,
         locate_params: LocateParams = LocateParams(),
     ) -> tuple[Observation, TemplateMatch]:
         """Click the frame center until one of `template_ids` appears."""
         return self.observe_until(
-            self.present(template_ids, locate_params),
+            self.present(template_ids, locate_params=locate_params),
             on_condition_failed=lambda observation: (
                 self.click(observation.rect.center)
-                if self.present("dialogue_arrow", _DIALOGUE_ARROW_PARAMS)(observation)
+                if self.present("dialogue_arrow", locate_params=_DIALOGUE_ARROW_PARAMS)(
+                    observation
+                )
                 else None
             ),
         )

@@ -31,12 +31,14 @@ class TMGBot(core.api.Bot):
             self.session.present("dungeon_mode_sentinel")
         )
         self.session.click_through(
-            "normal", self._sentinel_option_params(template_match)
+            "normal", locate_params=self._sentinel_option_params(template_match)
         )
         self.session.click_through("yes")
         self.session.move_center()
         self.session.observe_until(
-            self.session.present("dialogue_arrow", core.api._DIALOGUE_ARROW_PARAMS)
+            self.session.present(
+                "dialogue_arrow", locate_params=core.api._DIALOGUE_ARROW_PARAMS
+            )
         )
         self.session.click_through_dialogue_until("show_grimoire_1")
         self.session.click_through("show_grimoire_1")
@@ -44,13 +46,16 @@ class TMGBot(core.api.Bot):
             "go_to_top_floor_sentinel"
         )
         self.session.click_through(
-            "go_to_top_floor", self._sentinel_option_params(template_match)
+            "go_to_top_floor",
+            locate_params=self._sentinel_option_params(template_match),
         )
         self.session.move_center()
 
         # Remove all ghosts
         self.session.observe_until(
-            self.session.present("dialogue_arrow", core.api._DIALOGUE_ARROW_PARAMS)
+            self.session.present(
+                "dialogue_arrow", locate_params=core.api._DIALOGUE_ARROW_PARAMS
+            )
         )
         self.session.click_through_dialogue_until("show_grimoire_2")
         self.session.click_through("show_grimoire_2")
@@ -58,7 +63,9 @@ class TMGBot(core.api.Bot):
         self.session.click_through("remove_all_ghosts")
         self.session.click_through_dialogue_until("info")
         self.session.observe_until(
-            self.session.present("dialogue_arrow", core.api._DIALOGUE_ARROW_PARAMS)
+            self.session.present(
+                "dialogue_arrow", locate_params=core.api._DIALOGUE_ARROW_PARAMS
+            )
         )
         self.session.click_through_dialogue_until("go_to_roof")
         self.session.click_through("go_to_roof")
@@ -66,7 +73,8 @@ class TMGBot(core.api.Bot):
             "go_to_roof_sentinel"
         )
         self.session.click_through(
-            "yes", self._sentinel_option_params(template_match, "yes_yagishima")
+            "yes",
+            locate_params=self._sentinel_option_params(template_match, "yes_yagishima"),
         )
         self.session.move_center()
 
@@ -75,13 +83,16 @@ class TMGBot(core.api.Bot):
             self.session.present("go_to_lucifuge_sentinel")
         )
         self.session.click_through(
-            "yes", self._sentinel_option_params(template_match, "yes_roof")
+            "yes",
+            locate_params=self._sentinel_option_params(template_match, "yes_roof"),
         )
         self.session.move_center()
 
         # Talk to lucifuge
         self.session.observe_until(
-            self.session.present("dialogue_arrow", core.api._DIALOGUE_ARROW_PARAMS)
+            self.session.present(
+                "dialogue_arrow", locate_params=core.api._DIALOGUE_ARROW_PARAMS
+            )
         )
         self.session.click_through_dialogue_until("info")
 
@@ -93,7 +104,8 @@ class TMGBot(core.api.Bot):
             self.session.present("exit_lucifuge_sentinel")
         )
         self.session.click_through(
-            "yes", self._sentinel_option_params(template_match, "yes_leave")
+            "yes",
+            locate_params=self._sentinel_option_params(template_match, "yes_leave"),
         )
         self.session.move_center()
 
