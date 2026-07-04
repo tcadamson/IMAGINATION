@@ -97,8 +97,11 @@ class TMGBot(core.api.Bot):
         self.session.click_through_dialogue_until("info")
 
         # Loot from lucifuge and exit
-        self.session.observe_until(self.session.present("take_all"))
-        self.session.click_template("take_all")
+        take_all_params = core.api.LocateParams(region_padding=50)
+        self.session.observe_until(
+            self.session.present("take_all", locate_params=take_all_params)
+        )
+        self.session.click_template("take_all", locate_params=take_all_params)
         self.session.move_center()
         _, template_match = self.session.observe_until(
             self.session.present("exit_lucifuge_sentinel")
