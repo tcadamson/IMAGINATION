@@ -32,7 +32,9 @@ ROOT_DIRECTORY: typing.Final = (
 )
 
 pydirectinput.PAUSE = DEFAULT_SLEEP
-pydirectinput.FAILSAFE = False  # Use client window focus as the failsafe
+pydirectinput.FAILSAFE = (
+    False  # Use client window focus as the failsafe (see Session._guard)
+)
 
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)
@@ -244,7 +246,25 @@ class ClickParams:
 
 
 class Aborted(Exception):
-    """The user intentionally halted a workflow by losing client focus."""
+    """The user intentionally halted a workflow while paused."""
+
+
+ABORT_MESSAGE: typing.Final = "Aborted by user."
+
+
+def safe_abort() -> None:
+    """Perform an uninterrupted sleep, resetting the SIGINT event.
+
+    An interrupted sleep leaves the interpreter's SIGINT event signaled and sends two
+    Ctrl+C inputs to the REPL. Must be called while intercepting a KeyboardInterrupt
+    raised from a blocking call.
+    """
+    while True:
+        try:
+            time.sleep(0.01)
+            break
+        except KeyboardInterrupt:
+            pass
 
 
 class Bot(abc.ABC):
@@ -693,9 +713,21 @@ class Session:
         self.scale = scale
 
     def _guard(self, *points: Point) -> None:
-        """Assert the client has focus and all `points` are inside of it."""
+        """Assert `points` are inside the client; pause while out of focus."""
         if not self.client.is_focused:
-            raise Aborted
+            _logger.info(
+                "Paused. Refocus client to resume, or Ctrl+C in this console to quit."
+            )
+
+            try:
+                while not self.client.is_focused:
+                    time.sleep(0.1)
+            except KeyboardInterrupt:
+                safe_abort()
+                raise Aborted from None
+
+            pydirectinput.mouseUp()  # Don't move window if user clicks title bar to regain focus
+            _logger.info("Resuming.")
 
         client_rect = self.client.rect
         for point in points:
@@ -781,8 +813,11 @@ class Session:
 
     def click(self, point: Point, click_params: ClickParams = ClickParams()) -> None:
         """Guard client focus and bounds, then click at the `point`."""
-        self._guard(point)
-        Actions.click(point, click_params=click_params)
+        for _ in range(click_params.count):
+            self._guard(point)
+            Actions.click(
+                point, click_params=dataclasses.replace(click_params, count=1)
+            )
 
     def _click_template_attempt(
         self,

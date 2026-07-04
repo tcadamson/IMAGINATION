@@ -204,7 +204,12 @@ def _launch(
         run_config,
         on_event=_on_event_override,
     )
-    scheduler.run()
+
+    try:
+        scheduler.run()
+    except KeyboardInterrupt:
+        core.api.safe_abort()
+        logging.info(core.api.ABORT_MESSAGE)
 
 
 def _dispatch(args: collections.abc.Sequence[str]) -> None:

@@ -33,7 +33,7 @@ class FinishedEvent(Event):
 
 @dataclasses.dataclass(frozen=True)
 class AbortedEvent(Event):
-    """A workflow was intentionally halted by the user."""
+    """A workflow was intentionally halted by the user, ending the run."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -102,7 +102,7 @@ class Scheduler:
             _logger.exception("_on_event callback raised for %s", label)
 
     def run(self) -> None:
-        """Advance each queued workflow one handoff at a time until all finish."""
+        """Advance each queued workflow until all complete or the run is ended."""
         while self._queue and not self._stop.is_set():
             assignment, workflow = self._queue.popleft()
             assignment.session.client.focus()
@@ -111,6 +111,7 @@ class Scheduler:
                 handoff = next(workflow)
             except core.api.Aborted:
                 self._emit(assignment.label, AbortedEvent())
+                self.stop()
                 continue
             except StopIteration:
                 self._emit(assignment.label, FinishedEvent())
@@ -156,7 +157,7 @@ def log_event(label: str, event: Event) -> None:
         case HandoffEvent(reason=reason):
             _logger.debug("%s handoff: %s", label, reason)
         case AbortedEvent():
-            _logger.info("%s aborted by user", label)
+            _logger.info(core.api.ABORT_MESSAGE)
         case FinishedEvent():
             _logger.info("%s finished", label)
         case CrashedEvent(exception=exception):
