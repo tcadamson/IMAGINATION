@@ -128,13 +128,17 @@ def _assign(bind: Bind, run_config: core.api.RunConfig) -> BotAssignment:
 
     Isolated scope ensures the workflow lambda closes over its own variables.
     """
-    scale = bind.client.calculate_scale()
+    scale = (
+        run_config.scale
+        if run_config.scale is not None
+        else bind.client.calculate_scale()
+    )
     session = core.api.Session(
         bind.client,
         core.api.TemplateMatcher.from_template_directory(
             core.paths.TEMPLATE_DIRECTORY,
             bot_id=bind.spec.bot_id,
-            scale=run_config.scale if run_config.scale is not None else scale,
+            scale=scale,
             confidence=run_config.confidence,
         ),
         scale,
