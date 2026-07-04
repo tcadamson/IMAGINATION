@@ -103,9 +103,12 @@ class Scheduler:
 
     def run(self) -> None:
         """Advance each queued workflow until all complete or the run is ended."""
+        if self._queue:
+            self._queue[0][0].session.client.focus()  # Initial handoff from the console
+
         while self._queue and not self._stop.is_set():
             assignment, workflow = self._queue.popleft()
-            assignment.session.client.focus()
+            self._focus_client(assignment)
 
             try:
                 handoff = next(workflow)
@@ -122,6 +125,22 @@ class Scheduler:
 
             self._emit(assignment.label, HandoffEvent(handoff.reason))
             self._queue.append((assignment, workflow))
+
+    def _focus_client(self, assignment: BotAssignment) -> None:
+        """Activate client on `assignment` unless focus moved elsewhere.
+
+        Focus is requested only when parked on a bound client. If the user focused an
+        unrelated window, let Session._guard pause the workflow until focus is
+        returned.
+        """
+        if any(
+            client.is_focused
+            for client in (
+                assignment.session.client,
+                *(assignment.session.client for assignment, _ in self._queue),
+            )
+        ):
+            assignment.session.client.focus()
 
 
 def _assign(bind: Bind, run_config: core.api.RunConfig) -> BotAssignment:
