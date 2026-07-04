@@ -44,6 +44,11 @@ except AttributeError, OSError:
 _logger: logging.Logger = logging.getLogger(__name__)
 
 
+def _is_unit_scale(scale: float) -> bool:
+    """Whether `scale` is close enough to 1.0 to skip resampling."""
+    return abs(scale - 1.0) <= 1e-3
+
+
 @dataclasses.dataclass(frozen=True)
 class Point:
     """Immutable, two-dimensional integer coordinate."""
@@ -52,7 +57,7 @@ class Point:
     y: int
 
     def offset(self, dx: int = 0, dy: int = 0) -> Point:
-        """Return a new point shifted by the given deltas."""
+        """Return a new point offset from this one by `dx` and `dy`."""
         return Point(self.x + dx, self.y + dy)
 
 
@@ -209,7 +214,7 @@ def _load_template_specs(template_directory: pathlib.Path) -> dict[str, Template
 
 @dataclasses.dataclass(frozen=True)
 class TemplateMatch:
-    """Immutable template match data in client-space coordinates."""
+    """Immutable template match data in logical client-space coordinates."""
 
     template_id: str
     rect: Rect
@@ -218,11 +223,7 @@ class TemplateMatch:
 
 @dataclasses.dataclass(frozen=True, eq=False)
 class LocateParams:
-    """Immutable locate parameters.
-
-    Note that `region_padding` is scaled at locate time and should not be scaled
-    manually.
-    """
+    """Immutable locate parameters, in logical client-space pixels."""
 
     region: Rect | None = None
     region_padding: _Padding = 0
@@ -337,7 +338,7 @@ class Actions:
         button: str = pydirectinput.MOUSE_SECONDARY,
         count: int = 1,
     ) -> None:
-        """Drag from a screen-space `point` by the given deltas."""
+        """Drag from a screen-space `point` by `dx` and `dy`."""
         for _ in range(count):
             Actions.move(point)
             pydirectinput.mouseDown(button=button)
@@ -427,15 +428,24 @@ class Client:
 
         return dpi / 96.0 if dpi > 0 else 1.0
 
-    def capture(self) -> numpy.ndarray:
-        """Capture the client frame in BGR."""
+    def capture(self, scale: float = 1.0) -> numpy.ndarray:
+        """Capture the client frame in BGR, downscaled to logical space."""
         if self._mss is None:
             self._mss = mss.MSS()
 
         frame = cv2.cvtColor(
             numpy.array(self._mss.grab(self.rect.bounds)), cv2.COLOR_BGRA2BGR
         )
-        return frame
+
+        if _is_unit_scale(scale):
+            return frame
+
+        frame_height, frame_width = frame.shape[:2]
+        return cv2.resize(
+            frame,
+            (round(frame_width / scale), round(frame_height / scale)),
+            interpolation=cv2.INTER_AREA,
+        )
 
 
 class TemplateMatcher:
@@ -461,7 +471,8 @@ class TemplateMatcher:
         If `bot_id` is specified, PNGs from `template_directory/<bot_id>` will seed the
         matcher in a second pass.
 
-        `scale` resizes every template to match the client scale factor.
+        `scale` values >1.0 will modify template contents to correlate better against a
+        scaled client capture; dimensions are unchanged.
         """
         template_matcher = cls(scale, confidence)
         template_matcher._register_template_directory(template_directory)
@@ -480,7 +491,7 @@ class TemplateMatcher:
     ) -> None:
         """Register a template frame and clear any stale cached regions.
 
-        `frame` is expected to already be at client scale.
+        `frame` is expected to already be in logical space and registered as-is.
         """
         spec = spec if spec is not None else TemplateSpec()
 
@@ -496,19 +507,29 @@ class TemplateMatcher:
         for region_cache_key in stale:
             del self._region_cache[region_cache_key]
 
-    def _scale_to_client(self, frame: numpy.ndarray) -> numpy.ndarray:
-        """Resize a frame to match the client scale factor."""
-        if abs(self._scale - 1.0) <= 1e-3:
+    def _condition_template(self, frame: numpy.ndarray) -> numpy.ndarray:
+        """Round-trip a template to mimic transformations done to the client capture.
+
+        First scale up the template bilinearly (approximate DWM), then downscale it
+        using the same method applied to the client capture. The result will correlate
+        better when matching.
+        """
+        if _is_unit_scale(self._scale):
             return frame
 
         template_height, template_width = frame.shape[:2]
-        return cv2.resize(
+        upscaled = cv2.resize(
             frame,
             (
                 round(template_width * self._scale),
                 round(template_height * self._scale),
             ),
             interpolation=cv2.INTER_LINEAR,
+        )
+        return cv2.resize(
+            upscaled,
+            (template_width, template_height),
+            interpolation=cv2.INTER_AREA,
         )
 
     def _register_template_directory(self, template_directory: pathlib.Path) -> None:
@@ -525,7 +546,7 @@ class TemplateMatcher:
 
             self.register_template(
                 filename.stem,
-                self._scale_to_client(frame),
+                self._condition_template(frame),
                 spec=specs.get(filename.stem),
             )
 
@@ -538,14 +559,6 @@ class TemplateMatcher:
         appearing in multiple locations.
         """
         return self._region_cache.get((template_id, region_cache_id))
-
-    def _scaled_padding(self, padding: _Padding) -> _Padding:
-        """Scale hand-authored padding to the client's scale factor."""
-        if isinstance(padding, int):
-            return round(padding * self._scale)
-
-        dx, dy = padding
-        return round(dx * self._scale), round(dy * self._scale)
 
     def _locate(
         self,
@@ -619,9 +632,7 @@ class TemplateMatcher:
             )
 
             if region_cached is not None:
-                region = region_cached.inflate(
-                    self._scaled_padding(locate_params.region_padding)
-                )
+                region = region_cached.inflate(locate_params.region_padding)
             else:
                 cache = True
 
@@ -647,11 +658,9 @@ class Observation:
     def __init__(
         self,
         frame: numpy.ndarray,
-        rect: Rect,
         template_matcher: TemplateMatcher,
     ):
         self.frame = frame
-        self.rect = rect
         self._template_matcher = template_matcher
 
     def locate(
@@ -684,8 +693,9 @@ class Observation:
     ) -> None:
         """Register a slice of this observation's frame as a matchable template.
 
-        `region` is in client-space coordinates and is clamped to the frame bounds. The
-        slice is already at client scale, so it is registered without scaling.
+        `region` is in logical-space coordinates and is clamped to the frame bounds.
+        The slice is already in logical space, so it is registered without
+        conditioning.
         """
         frame_height, frame_width = self.frame.shape[:2]
         x1, y1, x2, y2 = region.clamp(frame_width, frame_height).bounds
@@ -694,16 +704,12 @@ class Observation:
             template_id, self.frame[y1:y2, x1:x2], spec=spec
         )
 
-    def to_screen_space(self, point: Point) -> Point:
-        """Convert a client-space `point` to screen space."""
-        return point.offset(self.rect.x, self.rect.y)
-
 
 class Session:
     """Automation session associated with a specific client window.
 
-    `scale` exposes the client's scale factor for converting hand-authored pixel
-    offsets.
+    All coordinates are in logical space; points passed to `move`, `click`, and `drag`
+    are converted to screen space internally.
     """
 
     def __init__(self, client: Client, template_matcher: TemplateMatcher, scale: float):
@@ -711,6 +717,14 @@ class Session:
 
         self.client = client
         self.scale = scale
+
+    def _to_screen_space(self, point: Point) -> Point:
+        """Convert a logical-space `point` to screen space."""
+        client_rect = self.client.rect
+        return Point(
+            client_rect.x + round(point.x * self.scale),
+            client_rect.y + round(point.y * self.scale),
+        )
 
     def _guard(self, *points: Point) -> None:
         """Assert `points` are inside the client; pause while out of focus."""
@@ -727,23 +741,26 @@ class Session:
                 raise Aborted from None
 
             pydirectinput.mouseUp()  # Don't move window if user clicks title bar to regain focus
-            _logger.info("Resuming.")
+            _logger.info("Resumed.")
 
         client_rect = self.client.rect
         for point in points:
             if not client_rect.contains(point):
                 raise RuntimeError(f"Point outside client: {point} {client_rect}")
 
-    def scaled(self, *values: float) -> tuple[int, ...]:
-        """Scale hand-authored pixel offsets by the client's scale factor."""
-        return tuple(round(value * self.scale) for value in values)
+    @property
+    def _logical_center(self) -> Point:
+        """Center of the client, in logical space."""
+        client_rect = self.client.rect
+        return Point(
+            round(client_rect.width / self.scale) // 2,
+            round(client_rect.height / self.scale) // 2,
+        )
 
     def observe(self) -> Observation:
         """Observe a fresh client capture."""
         self._guard()
-        return Observation(
-            self.client.capture(), self.client.rect, self._template_matcher
-        )
+        return Observation(self.client.capture(self.scale), self._template_matcher)
 
     def observe_until[T](
         self,
@@ -804,20 +821,26 @@ class Session:
 
     def move(self, point: Point) -> None:
         """Guard client focus and bounds, then move the cursor to the `point`."""
-        self._guard(point)
-        Actions.move(point)
+        screen_point = self._to_screen_space(point)
+        self._guard(screen_point)
+        Actions.move(screen_point)
 
     def move_center(self) -> None:
         """Convenience method to move the cursor to the client center."""
-        self.move(self.client.rect.center)
+        self.move(self._logical_center)
 
     def click(self, point: Point, click_params: ClickParams = ClickParams()) -> None:
         """Guard client focus and bounds, then click at the `point`."""
         for _ in range(click_params.count):
-            self._guard(point)
+            screen_point = self._to_screen_space(point)
+            self._guard(screen_point)
             Actions.click(
-                point, click_params=dataclasses.replace(click_params, count=1)
+                screen_point, click_params=dataclasses.replace(click_params, count=1)
             )
+
+    def click_center(self) -> None:
+        """Convenience method to click the client center."""
+        self.click(self._logical_center)
 
     def _click_template_attempt(
         self,
@@ -831,9 +854,7 @@ class Session:
         template_match = observation.locate(template_id, locate_params=locate_params)
 
         if template_match is not None:
-            self.click(
-                observation.to_screen_space(template_match.rect.center), click_params
-            )
+            self.click(template_match.rect.center, click_params)
 
         return template_match
 
@@ -920,7 +941,7 @@ class Session:
         return self.observe_until(
             self.present(template_ids, locate_params=locate_params),
             on_condition_failed=lambda observation: (
-                self.click(observation.rect.center)
+                self.click_center()
                 if self.present("dialogue_arrow", locate_params=_DIALOGUE_ARROW_PARAMS)(
                     observation
                 )
@@ -929,9 +950,10 @@ class Session:
         )
 
     def drag(self, point: Point, dx: int, dy: int, **drag_kwargs) -> None:
-        """Guard client focus and bounds, then drag from `point` by given deltas."""
-        self._guard(point, point.offset(dx, dy))
-        Actions.drag(point, dx, dy, **drag_kwargs)
+        """Guard client focus and bounds, then drag from `point` by `dx` and `dy`."""
+        screen_point = self._to_screen_space(point)
+        self._guard(screen_point, screen_point.offset(dx, dy))
+        Actions.drag(screen_point, dx, dy, **drag_kwargs)
 
     def hotkey(self, *keys: str, **hotkey_kwargs) -> None:
         """Guard client focus, then press the key combination."""

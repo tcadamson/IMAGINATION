@@ -20,7 +20,7 @@ class TMGBot(core.api.Bot):
         """Return locate params for the option below a matched sentinel."""
         return core.api.LocateParams(
             region=template_match.rect.relative(
-                -5, template_match.rect.height, *self.session.scaled(150, 75)
+                -5, template_match.rect.height, 150, 75
             ),
             region_cache_id=region_cache_id,
         )

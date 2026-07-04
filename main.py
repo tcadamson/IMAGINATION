@@ -83,7 +83,7 @@ def _cli_run_callback(
     ] = core.api.DEFAULT_SLEEP,
     scale: typing.Annotated[
         float | None,
-        typer.Option(help="Override the DPI-derived template scale factor.", min=1.0),
+        typer.Option(help="Override the DPI-derived client scale factor.", min=1.0),
     ] = None,
 ) -> None:
     """Run one of the installed bots."""

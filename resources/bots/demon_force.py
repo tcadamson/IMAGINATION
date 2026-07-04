@@ -28,8 +28,8 @@ class DemonForceBot(core.api.Bot):
         if devil_sentinel is None:
             raise RuntimeError("Could not locate DEVIL on UI bar.")
 
-        demon_1 = devil_sentinel.rect.relative(*self.session.scaled(0, 0, 32, 60))
-        demon_2 = devil_sentinel.rect.relative(*self.session.scaled(0, -210, 50, 420))
+        demon_1 = devil_sentinel.rect.relative(0, 0, 32, 60)
+        demon_2 = devil_sentinel.rect.relative(0, -210, 50, 420)
         while True:
             self.session.click_template("devil_sentinel")
             demon_sentinel_1 = self.session.observe().locate(
@@ -63,9 +63,7 @@ class DemonForceBot(core.api.Bot):
                 summoned_sentinel = observation.locate_any(
                     ("summoned_sentinel_0", "summoned_sentinel_1"),
                     locate_params=core.api.LocateParams(
-                        demon_sentinel_3.rect.relative(
-                            *self.session.scaled(0, 100, 20, 475)
-                        )
+                        demon_sentinel_3.rect.relative(0, 100, 20, 475)
                     ),
                 )
 
@@ -76,9 +74,7 @@ class DemonForceBot(core.api.Bot):
 
                 observation.register_frame_slice(
                     "summoned",
-                    summoned_sentinel.rect.relative(
-                        *self.session.scaled(32, -7, 30, 13)
-                    ),
+                    summoned_sentinel.rect.relative(32, -7, 30, 13),
                 )
                 break
         self.session.click_template("summoned")
@@ -93,9 +89,7 @@ class DemonForceBot(core.api.Bot):
             self.session.present("demon_information_sentinel")
         )
         demon_force_params = core.api.LocateParams(
-            demon_information_sentinel.rect.relative(
-                *self.session.scaled(250, 35, 100, 20)
-            )
+            demon_information_sentinel.rect.relative(250, 35, 100, 20)
         )
 
         if observation.locate("demon_force", locate_params=demon_force_params):
