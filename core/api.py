@@ -448,6 +448,59 @@ class Client:
         )
 
 
+@dataclasses.dataclass(frozen=True, eq=False)
+class _ScoreMap:
+    """Correlation scores for one template, with frame-space coordinate context.
+
+    scores[y, x] is the correlation of the template placed with its origin point at
+    frame coordinates (x + x1, y + y1).
+    """
+
+    scores: numpy.ndarray
+    template_id: str
+    template_width: int
+    template_height: int
+    confidence: float
+    x1: int
+    y1: int
+
+    def suppress(self, mask: Rect) -> None:
+        """Invalidate every placement whose match region would intersect `mask`.
+
+        Bounds are clamped to zero on both edges; a negative stop would otherwise be
+        interpreted as end-relative and suppress valid placements.
+        """
+        mask_x1, mask_y1, mask_x2, mask_y2 = mask.bounds
+        self.scores[
+            max(mask_y1 - self.y1 - self.template_height + 1, 0) : max(
+                mask_y2 - self.y1, 0
+            ),
+            max(mask_x1 - self.x1 - self.template_width + 1, 0) : max(
+                mask_x2 - self.x1, 0
+            ),
+        ] = -1.0
+
+    def best(self) -> TemplateMatch | None:
+        """Return the highest-scoring placement remaining in the map."""
+        _, max_val, _, max_loc = cv2.minMaxLoc(self.scores)
+
+        if (
+            max_val <= -1.0 or max_val < self.confidence
+        ):  # Suppressed placements (-1.0) must never be returned, or locate_all will hang
+            return None
+
+        return TemplateMatch(
+            self.template_id,
+            Rect(
+                self.x1 + max_loc[0],
+                self.y1 + max_loc[1],
+                self.template_width,
+                self.template_height,
+            ),
+            max_val,
+        )
+
+
 class TemplateMatcher:
     """Template matching utility with template registry and region cache."""
 
@@ -532,6 +585,49 @@ class TemplateMatcher:
             interpolation=cv2.INTER_AREA,
         )
 
+    def _correlate_template(
+        self,
+        frame: numpy.ndarray,
+        template_id: str,
+        region: Rect | None,
+        masks: tuple[Rect, ...],
+        confidence: float | None = None,
+    ) -> _ScoreMap | None:
+        """Correlate `template_id` against `frame`, returning a score map.
+
+        Placements whose match region would overlap a mask are invalidated.
+        """
+        frame_height, frame_width = frame.shape[:2]
+
+        if region is None:
+            x1, y1, x2, y2 = 0, 0, frame_width, frame_height
+        else:
+            x1, y1, x2, y2 = region.clamp(frame_width, frame_height).bounds
+
+        template = self._templates[template_id]
+        template_height, template_width = template.frame.shape[:2]
+
+        if x2 - x1 < template_width or y2 - y1 < template_height:
+            return None
+
+        frame_slice = frame[y1:y2, x1:x2]
+
+        if template.spec.grayscale:
+            frame_slice = cv2.cvtColor(frame_slice, cv2.COLOR_BGR2GRAY)
+
+        score_map = _ScoreMap(
+            cv2.matchTemplate(frame_slice, template.frame, cv2.TM_CCOEFF_NORMED),
+            template_id,
+            template_width,
+            template_height,
+            confidence or template.spec.confidence or self._confidence,
+            x1,
+            y1,
+        )
+        for mask in masks:
+            score_map.suppress(mask)
+        return score_map
+
     def _register_template_directory(self, template_directory: pathlib.Path) -> None:
         """Register every template PNG in `template_directory`, skipping if it is absent."""
         if not template_directory.is_dir():
@@ -560,61 +656,6 @@ class TemplateMatcher:
         """
         return self._region_cache.get((template_id, region_cache_id))
 
-    def _locate(
-        self,
-        frame: numpy.ndarray,
-        template_id: str,
-        region: Rect | None,
-        masks: tuple[Rect, ...],
-        confidence: float | None = None,
-    ) -> TemplateMatch | None:
-        """Attempt to match a single template on the given `frame`.
-
-        The public-facing method seeds this internal method with regions from
-        the region cache when applicable.
-        """
-        frame_height, frame_width = frame.shape[:2]
-
-        if region is None:
-            x1, y1, x2, y2 = 0, 0, frame_width, frame_height
-        else:
-            x1, y1, x2, y2 = region.clamp(frame_width, frame_height).bounds
-
-        template = self._templates[template_id]
-        template_height, template_width = template.frame.shape[:2]
-
-        if x2 - x1 < template_width or y2 - y1 < template_height:
-            return None
-
-        frame_slice = frame[y1:y2, x1:x2]
-
-        if masks:
-            frame_mask = numpy.full((frame_height, frame_width), 255, dtype=numpy.uint8)
-            for mask in masks:
-                x1_mask, y1_mask, x2_mask, y2_mask = mask.clamp(
-                    frame_width, frame_height
-                ).bounds
-                frame_mask[y1_mask:y2_mask, x1_mask:x2_mask] = 0
-            frame_slice = cv2.bitwise_and(
-                frame_slice, frame_slice, mask=frame_mask[y1:y2, x1:x2]
-            )
-
-        if template.spec.grayscale:
-            frame_slice = cv2.cvtColor(frame_slice, cv2.COLOR_BGR2GRAY)
-
-        result = cv2.matchTemplate(frame_slice, template.frame, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
-
-        if max_val < (confidence or template.spec.confidence or self._confidence):
-            return None
-
-        _logger.debug("Matched %s@%.6f", template_id, max_val)
-        return TemplateMatch(
-            template_id,
-            Rect(x1 + max_loc[0], y1 + max_loc[1], template_width, template_height),
-            max_val,
-        )
-
     def locate(
         self,
         frame: numpy.ndarray,
@@ -622,9 +663,13 @@ class TemplateMatcher:
         *,
         locate_params: LocateParams = LocateParams(),
     ) -> TemplateMatch | None:
-        """Attempt to match a single template on the given `frame`."""
+        """Attempt to match a single template on the given `frame`.
+
+        An explicit region passed in `locate_params` will override any cached region
+        for `template_id`.
+        """
         region = locate_params.region
-        cache = False
+        region_cache_key = None
 
         if locate_params.region is None:
             region_cached = self.get_region_cached(
@@ -634,9 +679,9 @@ class TemplateMatcher:
             if region_cached is not None:
                 region = region_cached.inflate(locate_params.region_padding)
             else:
-                cache = True
+                region_cache_key = (template_id, locate_params.region_cache_id)
 
-        template_match = self._locate(
+        score_map = self._correlate_template(
             frame,
             template_id,
             region,
@@ -644,12 +689,77 @@ class TemplateMatcher:
             locate_params.confidence,
         )
 
-        if cache and template_match is not None:
-            self._region_cache[(template_id, locate_params.region_cache_id)] = (
-                template_match.rect
+        if score_map is None:
+            return None
+
+        template_match = score_map.best()
+
+        if template_match is None:
+            return None
+
+        if region_cache_key is not None:
+            self._region_cache[region_cache_key] = template_match.rect
+
+        _logger.debug(
+            "Matched %s@%.6f", template_match.template_id, template_match.confidence
+        )
+        return template_match
+
+    def locate_all(
+        self,
+        frame: numpy.ndarray,
+        template_ids: tuple[str, ...],
+        *,
+        locate_params: LocateParams = LocateParams(),
+        group: bool = True,
+    ) -> list[TemplateMatch]:
+        """Match every instance of every template in `template_ids` on `frame`.
+
+        Note that the region cache is bypassed, as multiple instances of a template
+        cannot have a single canonical region. Matches are returned in descending
+        confidence order and grouped by template_id if the `group` flag is set.
+        """
+        score_maps: list[_ScoreMap] = []
+        for template_id in template_ids:
+            score_map = self._correlate_template(
+                frame,
+                template_id,
+                locate_params.region,
+                locate_params.masks,
+                locate_params.confidence,
             )
 
-        return template_match
+            if score_map is not None:
+                score_maps.append(score_map)
+
+        template_matches: list[TemplateMatch] = []
+        while True:
+            candidates = []
+            for score_map in score_maps:
+                template_match = score_map.best()
+
+                if template_match is not None:
+                    candidates.append(template_match)
+
+            if not candidates:
+                break
+
+            best = max(candidates, key=lambda template_match: template_match.confidence)
+            template_matches.append(best)
+            _logger.debug("Matched %s@%.6f", best.template_id, best.confidence)
+
+            for score_map in score_maps:
+                score_map.suppress(best.rect)
+
+        if group:
+            return sorted(
+                template_matches,
+                key=lambda template_match: template_ids.index(
+                    template_match.template_id
+                ),
+            )
+
+        return template_matches
 
 
 class Observation:
@@ -666,7 +776,10 @@ class Observation:
     def locate(
         self, template_id: str, *, locate_params: LocateParams = LocateParams()
     ) -> TemplateMatch | None:
-        """Attempt to match `template_id` on the observation frame."""
+        """Match `template_id` on this frame.
+
+        See `TemplateMatcher.locate`.
+        """
         return self._template_matcher.locate(
             self.frame, template_id, locate_params=locate_params
         )
@@ -677,7 +790,7 @@ class Observation:
         *,
         locate_params: LocateParams = LocateParams(),
     ) -> TemplateMatch | None:
-        """Attempt to match any template in `template_ids` on the observation frame.
+        """Match any template in `template_ids` on this frame.
 
         Return first match or None.
         """
@@ -687,6 +800,24 @@ class Observation:
             if template_match is not None:
                 return template_match
         return None
+
+    def locate_all(
+        self,
+        template_ids: str | tuple[str, ...],
+        *,
+        locate_params: LocateParams = LocateParams(),
+        group: bool = True,
+    ) -> list[TemplateMatch]:
+        """Match every instance of every template in `template_ids` on this frame.
+
+        See `TemplateMatcher.locate_all`.
+        """
+        if isinstance(template_ids, str):
+            template_ids = (template_ids,)
+
+        return self._template_matcher.locate_all(
+            self.frame, template_ids, locate_params=locate_params, group=group
+        )
 
     def register_frame_slice(
         self, template_id: str, region: Rect, *, spec: TemplateSpec | None = None
