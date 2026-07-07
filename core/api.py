@@ -23,7 +23,7 @@ type _Padding = int | tuple[int, int]
 type Workflow = collections.abc.Iterator[Handoff]
 
 DEFAULT_CONFIDENCE: typing.Final = 0.85
-DEFAULT_SLEEP: typing.Final = 0.08
+DEFAULT_SLEEP: typing.Final = 0.06
 
 ROOT_DIRECTORY: typing.Final = (
     pathlib.Path(sys.executable).resolve().parent
