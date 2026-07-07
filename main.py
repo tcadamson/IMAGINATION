@@ -239,7 +239,11 @@ def _generate_run_command(spec: core.api.BotSpec):
             inspect.Parameter(
                 field.name,
                 inspect.Parameter.KEYWORD_ONLY,
-                default=default,
+                default=typer.Option(
+                    default,
+                    help=field.metadata.get("help", ""),
+                    hidden=field.metadata.get("hidden", False),
+                ),
                 annotation=field.type,
             )
         )

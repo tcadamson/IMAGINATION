@@ -162,7 +162,7 @@ class BotConfig:
     """Base configuration for a bot workflow."""
 
     cycles_limit: int = dataclasses.field(
-        default=0, kw_only=True
+        default=0, kw_only=True, metadata={"hidden": True}
     )  # 0 runs indefinitely
 
 
@@ -646,6 +646,10 @@ class TemplateMatcher:
                 spec=specs.get(filename.stem),
             )
 
+    def get_template(self, template_id: str) -> Template:
+        """Return the registered template for `template_id`."""
+        return self._templates[template_id]
+
     def get_region_cached(
         self, template_id: str, *, region_cache_id: str | None = None
     ) -> Rect | None:
@@ -818,6 +822,13 @@ class Observation:
         return self._template_matcher.locate_all(
             self.frame, template_ids, locate_params=locate_params, group=group
         )
+
+    def get_template(self, template_id: str) -> Template:
+        """Return the registered template for `template_id`.
+
+        See `TemplateMatcher.get_template`.
+        """
+        return self._template_matcher.get_template(template_id)
 
     def register_frame_slice(
         self, template_id: str, region: Rect, *, spec: TemplateSpec | None = None

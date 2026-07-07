@@ -1,3 +1,9 @@
 {
-    "demon_force": { "grayscale": false }
+    "demon_force": { "grayscale": false },
+    "sands_0": { "grayscale": false },
+    "sands_1": { "grayscale": false },
+    "whitelist_nra_magic_0": { "grayscale": false },
+    "whitelist_nra_magic_1": { "grayscale": false },
+    "whitelist_nra_phys_0": { "grayscale": false },
+    "whitelist_nra_phys_1": { "grayscale": false }
 }
