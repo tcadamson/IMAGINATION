@@ -4,11 +4,13 @@ import collections.abc
 import dataclasses
 import hashlib
 import importlib.util
+import io
 import json
 import logging
 import os
 import pathlib
 import sys
+import tarfile
 import tempfile
 import typing
 import urllib.request
@@ -16,35 +18,27 @@ import urllib.request
 import core.api
 import core.paths
 
-type Manifest = dict[str, str]
-
-_ROOT_URL: typing.Final = (
-    "https://raw.githubusercontent.com/tcadamson/IMAGINATION/stable/"
+_ARCHIVE_URL: typing.Final = (
+    "https://codeload.github.com/tcadamson/IMAGINATION/tar.gz/refs/heads/stable"
 )
 
 _logger: logging.Logger = logging.getLogger(__name__)
 
 
-def _request_manifest(
-    url: str = _ROOT_URL + "resources/manifest.json", timeout: float = 10.0
-) -> Manifest:
-    """Fetch and parse the bot manifest from `url`."""
-    with urllib.request.urlopen(url, timeout=timeout) as response:
-        return json.load(response)
-
-
-def _download(url: str, sha256_expected: str, timeout: float = 30.0) -> bytes:
-    """Download bytes from `url`, raising unless they match `sha256_expected`."""
+def _request_archive(
+    url: str = _ARCHIVE_URL, timeout: float = 30.0
+) -> dict[str, bytes]:
+    """Download the stable branch tarball, keyed by relative path."""
+    archive = {}
     with urllib.request.urlopen(url, timeout=timeout) as response:
         data = response.read()
-    sha256_actual = hashlib.sha256(data).hexdigest()
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+        for member in tar:
+            extracted = tar.extractfile(member) if member.isfile() else None
 
-    if sha256_actual != sha256_expected:
-        raise RuntimeError(
-            f"Checksum mismatch for {url}: {sha256_actual} != {sha256_expected}"
-        )
-
-    return data
+            if extracted is not None:  # Strip the top-level "IMAGINATION-stable/"
+                archive[member.name.partition("/")[2]] = extracted.read()
+    return archive
 
 
 def _destination(relative_path: str) -> pathlib.Path:
@@ -118,15 +112,17 @@ def register_bot_directory(
     return bots
 
 
-def sync(manifest: Manifest | None = None) -> set[str]:
-    """Download each manifest entry whose local copy is absent or stale.
+def sync(archive: dict[str, bytes] | None = None) -> set[str]:
+    """Install each manifest entry whose local copy is absent or stale.
 
-    Return the stems of the files that were (re)downloaded.
+    Return the stems of the files that were (re)installed.
     """
     stale_bot_ids: set[str] = set()
 
-    if manifest is None:
-        manifest = _request_manifest()
+    if archive is None:
+        archive = _request_archive()
+
+    manifest: dict[str, str] = json.loads(archive["resources/manifest.json"])
 
     for relative_path in sorted(
         manifest,
@@ -143,9 +139,15 @@ def sync(manifest: Manifest | None = None) -> set[str]:
         ):
             continue
 
-        _atomic_write(
-            destination, _download(_ROOT_URL + relative_path, sha256_expected)
-        )
+        data = archive[relative_path]
+        sha256_actual = hashlib.sha256(data).hexdigest()
+
+        if sha256_actual != sha256_expected:
+            raise RuntimeError(
+                f"Checksum mismatch for {relative_path!r}: {sha256_actual} != {sha256_expected}"
+            )
+
+        _atomic_write(destination, data)
         stale_bot_ids.add(pathlib.PurePosixPath(relative_path).stem)
         _logger.info("Installed: %s", relative_path)
     return stale_bot_ids

@@ -162,7 +162,15 @@ def update() -> None:
     else:
         core.paths.migrate()
         core.presets.ensure_presets()
-        stale_bot_ids = core.registry.sync()
+
+        try:
+            stale_bot_ids = core.registry.sync()
+        except (
+            Exception
+        ) as exception:  # Update attempt is best-effort; fall back to installed bots
+            logging.exception("Update failed:")
+            _error_dialog(exception)
+            stale_bot_ids = set()
 
     print("Done.")
     for spec in core.registry.register_bot_directory(
@@ -255,7 +263,7 @@ def _generate_run_command(spec: core.api.BotSpec):
     return command
 
 
-def _guard(callback: typing.Callable[[], None]) -> None:
+def _guard(callback: collections.abc.Callable[[], None]) -> None:
     """Run `callback`, surfacing any crash as an error dialog."""
     try:
         callback()
