@@ -152,7 +152,10 @@ class DemonForceOutcome(enum.StrEnum):
 
 class DemonForceBot(core.api.Bot):
     bot_config: DemonForceBotConfig
-    queue = ()
+
+    def __init__(self, session: core.api.Session, bot_config: core.api.BotConfig):
+        super().__init__(session, bot_config)
+        self._queue: collections.deque[tuple[str, core.api.Rect]] = collections.deque()
 
     def setup(self) -> None:
         """Initiate demon force on the currently summoned demon.
