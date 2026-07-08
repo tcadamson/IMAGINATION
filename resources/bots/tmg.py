@@ -8,30 +8,35 @@ import core.api
 
 @dataclasses.dataclass(frozen=True)
 class TMGBotConfig(core.api.BotConfig):
-    pass  # TODO: --false option
+    false: bool = dataclasses.field(
+        default=False,
+        metadata={"help": "Go straight to the roof (two mag pressers per run)."},
+    )
 
 
 class TMGBot(core.api.Bot):
     bot_config: TMGBotConfig
 
     def _sentinel_option_params(
-        self, template_match: core.api.TemplateMatch, region_cache_id: str | None = None
+        self, sentinel: core.api.TemplateMatch, region_cache_id: str | None = None
     ) -> core.api.LocateParams:
         """Return locate params for the option below a matched sentinel."""
         return core.api.LocateParams(
-            region=template_match.rect.relative(
-                -5, template_match.rect.height, 150, 75
-            ),
+            region=sentinel.rect.relative(-5, sentinel.rect.height, 150, 75),
             region_cache_id=region_cache_id,
         )
 
     def cycle_logic(self) -> None:
+        """Travel through menuing hell to farm Lucifuge.
+
+        Users may elect to do false runs for mag pressers via the CLI option.
+        """
         # Go to top floor
-        _, template_match = self.session.observe_until(
+        _, dungeon_mode_sentinel = self.session.observe_until(
             self.session.present("dungeon_mode_sentinel")
         )
         self.session.click_through(
-            "normal", locate_params=self._sentinel_option_params(template_match)
+            "normal", locate_params=self._sentinel_option_params(dungeon_mode_sentinel)
         )
         self.session.click_through("yes")
         self.session.move_center()
@@ -42,12 +47,12 @@ class TMGBot(core.api.Bot):
         )
         self.session.click_through_dialogue_until("show_grimoire_1")
         self.session.click_through("show_grimoire_1")
-        _, template_match = self.session.click_through_dialogue_until(
+        _, go_to_top_floor_sentinel = self.session.click_through_dialogue_until(
             "go_to_top_floor_sentinel"
         )
         self.session.click_through(
             "go_to_top_floor",
-            locate_params=self._sentinel_option_params(template_match),
+            locate_params=self._sentinel_option_params(go_to_top_floor_sentinel),
         )
         self.session.move_center()
 
@@ -57,34 +62,41 @@ class TMGBot(core.api.Bot):
                 "dialogue_arrow", locate_params=core.api._DIALOGUE_ARROW_PARAMS
             )
         )
-        self.session.click_through_dialogue_until("show_grimoire_2")
-        self.session.click_through("show_grimoire_2")
-        self.session.click_through_dialogue_until("remove_all_ghosts")
-        self.session.click_through("remove_all_ghosts")
-        self.session.click_through_dialogue_until("info")
-        self.session.observe_until(
-            self.session.present(
-                "dialogue_arrow", locate_params=core.api._DIALOGUE_ARROW_PARAMS
+
+        if not self.bot_config.false:
+            self.session.click_through_dialogue_until("show_grimoire_2")
+            self.session.click_through("show_grimoire_2")
+            self.session.click_through_dialogue_until("remove_all_ghosts")
+            self.session.click_through("remove_all_ghosts")
+            self.session.click_through_dialogue_until("info")
+            self.session.observe_until(
+                self.session.present(
+                    "dialogue_arrow", locate_params=core.api._DIALOGUE_ARROW_PARAMS
+                )
             )
-        )
+
         self.session.click_through_dialogue_until("go_to_roof")
         self.session.click_through("go_to_roof")
-        _, template_match = self.session.click_through_dialogue_until(
+        _, go_to_roof_sentinel = self.session.click_through_dialogue_until(
             "go_to_roof_sentinel"
         )
         self.session.click_through(
             "yes",
-            locate_params=self._sentinel_option_params(template_match, "yes_yagishima"),
+            locate_params=self._sentinel_option_params(
+                go_to_roof_sentinel, "yes_yagishima"
+            ),
         )
         self.session.move_center()
 
         # Go to lucifuge
-        _, template_match = self.session.observe_until(
+        _, go_to_lucifuge_sentinel = self.session.observe_until(
             self.session.present("go_to_lucifuge_sentinel")
         )
         self.session.click_through(
             "yes",
-            locate_params=self._sentinel_option_params(template_match, "yes_roof"),
+            locate_params=self._sentinel_option_params(
+                go_to_lucifuge_sentinel, "yes_roof"
+            ),
         )
         self.session.move_center()
 
@@ -97,18 +109,24 @@ class TMGBot(core.api.Bot):
         self.session.click_through_dialogue_until("info")
 
         # Loot from lucifuge and exit
-        take_all_params = core.api.LocateParams(region_padding=50)
-        self.session.observe_until(
-            self.session.present("take_all", locate_params=take_all_params)
+        _, treasure_box = self.session.observe_until(
+            self.session.present("treasure_box")
         )
-        self.session.click_template("take_all", locate_params=take_all_params)
+        self.session.click_template(
+            "take_all",
+            locate_params=core.api.LocateParams(
+                treasure_box.rect.relative(30, 150, 90, 30)
+            ),
+        )
         self.session.move_center()
-        _, template_match = self.session.observe_until(
+        _, exit_lucifuge_sentinel = self.session.observe_until(
             self.session.present("exit_lucifuge_sentinel")
         )
         self.session.click_through(
             "yes",
-            locate_params=self._sentinel_option_params(template_match, "yes_leave"),
+            locate_params=self._sentinel_option_params(
+                exit_lucifuge_sentinel, "yes_leave"
+            ),
         )
         self.session.move_center()
 
