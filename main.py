@@ -71,7 +71,7 @@ def _cli_run_callback(
     confidence: typing.Annotated[
         float,
         typer.Option(
-            help="Required confidence for a template to match.", min=0.7, max=1.0
+            help="Required confidence for a template to match.", min=0.7, max=0.95
         ),
     ] = core.api.DEFAULT_CONFIDENCE,
     sleep: typing.Annotated[
@@ -85,9 +85,31 @@ def _cli_run_callback(
         float | None,
         typer.Option(help="Override the DPI-derived client scale factor.", min=1.0),
     ] = None,
+    refine_margin: typing.Annotated[
+        float,
+        typer.Option(
+            help="Additional confidence above the confidence threshold that a phase-rescued match must clear.",
+            min=0.0,
+            max=0.1,
+        ),
+    ] = core.api.DEFAULT_REFINE_MARGIN,
+    refine_band: typing.Annotated[
+        float,
+        typer.Option(
+            help="Shortfall below the required confidence within which phase recovery is attempted.",
+            min=0.0,
+            max=0.2,
+        ),
+    ] = core.api.DEFAULT_REFINE_BAND,
 ) -> None:
     """Run one of the installed bots."""
-    ctx.obj = core.api.RunConfig(confidence=confidence, sleep=sleep, scale=scale)
+    ctx.obj = core.api.RunConfig(
+        confidence=confidence,
+        sleep=sleep,
+        scale=scale,
+        refine_margin=refine_margin,
+        refine_band=refine_band,
+    )
 
 
 @_cli_presets.callback()
@@ -243,12 +265,16 @@ def _generate_run_command(spec: core.api.BotSpec):
     ]
     for field in dataclasses.fields(spec.bot_config_type):
         default = field.default if field.default is not dataclasses.MISSING else ...
+        declarations = (
+            (f"--{field.name.replace('_', '-')}",) if field.type is bool else ()
+        )  # Suppress --no-(option) stubs
         params.append(
             inspect.Parameter(
                 field.name,
                 inspect.Parameter.KEYWORD_ONLY,
                 default=typer.Option(
                     default,
+                    *declarations,
                     help=field.metadata.get("help", ""),
                     hidden=field.metadata.get("hidden", False),
                 ),

@@ -160,6 +160,8 @@ def _assign(bind: Bind, run_config: core.api.RunConfig) -> BotAssignment:
             bot_id=bind.spec.bot_id,
             scale=scale,
             confidence=run_config.confidence,
+            refine_margin=run_config.refine_margin,
+            refine_band=run_config.refine_band,
         ),
         scale,
     )

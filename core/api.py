@@ -24,6 +24,11 @@ type Workflow = collections.abc.Iterator[Handoff]
 
 DEFAULT_CONFIDENCE: typing.Final = 0.85
 DEFAULT_SLEEP: typing.Final = 0.06
+DEFAULT_REFINE_MARGIN: typing.Final = 0.05
+DEFAULT_REFINE_BAND: typing.Final = 0.08
+
+_REFINE_PHASE_SHIFTS: typing.Final = (-0.4, -0.2, 0.0, 0.2, 0.4)
+_REFINE_PADDING: typing.Final = 2
 
 ROOT_DIRECTORY: typing.Final = (
     pathlib.Path(sys.executable).resolve().parent
@@ -170,9 +175,11 @@ class BotConfig:
 class RunConfig:
     """Run configuration for a bot workflow."""
 
-    confidence: float = DEFAULT_CONFIDENCE
-    sleep: float = DEFAULT_SLEEP
-    scale: float | None = None
+    confidence: float
+    sleep: float
+    scale: float | None
+    refine_margin: float
+    refine_band: float
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -181,6 +188,36 @@ class Template:
 
     frame: numpy.ndarray
     spec: TemplateSpec
+    variants: tuple[numpy.ndarray, ...] = ()
+
+
+def _phase_variants(frame: numpy.ndarray) -> tuple[numpy.ndarray, ...]:
+    """Sub-pixel-shifted copies of `frame` covering nearby resampling phases.
+
+    At fractional DPI scales, the capture's downscale grid can sit a physical pixel off
+    the DWM upscale grid, depressing correlation on small templates. Matching against
+    phase variants recovers the lost confidence.
+    """
+    frame_size = frame.shape[1::-1]
+    variants = []
+    for dy in _REFINE_PHASE_SHIFTS:
+        for dx in _REFINE_PHASE_SHIFTS:
+            if dx == 0.0 and dy == 0.0:
+                continue  # The unshifted template is matched in the base pass
+
+            frame_matrix = numpy.array(
+                [[1.0, 0.0, dx], [0.0, 1.0, dy]], dtype=numpy.float32
+            )
+            variants.append(
+                cv2.warpAffine(
+                    frame,
+                    frame_matrix,
+                    frame_size,
+                    flags=cv2.INTER_CUBIC,
+                    borderMode=cv2.BORDER_REPLICATE,
+                )
+            )
+    return tuple(variants)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -461,6 +498,8 @@ class _ScoreMap:
     template_width: int
     template_height: int
     confidence: float
+    refine_margin: float
+    refine_band: float
     x1: int
     y1: int
 
@@ -480,35 +519,58 @@ class _ScoreMap:
             ),
         ] = -1.0
 
-    def best(self) -> TemplateMatch | None:
-        """Return the highest-scoring placement remaining in the map."""
+    def best(
+        self,
+        refine: collections.abc.Callable[[Rect], float] | None = None,
+    ) -> TemplateMatch | None:
+        """Return the highest-scoring placement remaining in the map.
+
+        If the placement falls short of the confidence threshold by no more than the
+        refine band and `refine` is given, it gets one chance to lift the score.
+        """
         _, max_val, _, max_loc = cv2.minMaxLoc(self.scores)
 
         if (
-            max_val <= -1.0 or max_val < self.confidence
+            max_val <= -1.0
         ):  # Suppressed placements (-1.0) must never be returned, or locate_all will hang
             return None
 
-        return TemplateMatch(
-            self.template_id,
-            Rect(
-                self.x1 + max_loc[0],
-                self.y1 + max_loc[1],
-                self.template_width,
-                self.template_height,
-            ),
-            max_val,
+        rect = Rect(
+            self.x1 + max_loc[0],
+            self.y1 + max_loc[1],
+            self.template_width,
+            self.template_height,
         )
+
+        if (
+            refine is not None
+            and self.confidence - self.refine_band <= max_val < self.confidence
+        ):
+            refined = refine(rect)
+
+            if refined >= min(
+                self.confidence + self.refine_margin, 0.99
+            ):  # Rescued matches must clear a stricter bar to combat score inflation
+                max_val = max(max_val, refined)
+
+        if max_val < self.confidence:
+            return None
+
+        return TemplateMatch(self.template_id, rect, max_val)
 
 
 class TemplateMatcher:
     """Template matching utility with template registry and region cache."""
 
-    def __init__(self, scale: float, confidence: float):
+    def __init__(
+        self, scale: float, confidence: float, refine_margin: float, refine_band: float
+    ):
         self._templates: dict[str, Template] = {}
         self._region_cache: dict[tuple[str, str | None], Rect] = {}
         self._scale = scale
         self._confidence = confidence
+        self._refine_margin = refine_margin
+        self._refine_band = refine_band
 
     @classmethod
     def from_template_directory(
@@ -518,6 +580,8 @@ class TemplateMatcher:
         bot_id: str | None = None,
         scale: float,
         confidence: float,
+        refine_margin: float,
+        refine_band: float,
     ) -> TemplateMatcher:
         """Create and seed matcher with PNGs from `template_directory`.
 
@@ -527,7 +591,7 @@ class TemplateMatcher:
         `scale` values >1.0 will modify template contents to correlate better against a
         scaled client capture; dimensions are unchanged.
         """
-        template_matcher = cls(scale, confidence)
+        template_matcher = cls(scale, confidence, refine_margin, refine_band)
         template_matcher._register_template_directory(template_directory)
 
         if bot_id is not None:
@@ -551,7 +615,11 @@ class TemplateMatcher:
         if spec.grayscale:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        self._templates[template_id] = Template(frame.copy(), spec)
+        self._templates[template_id] = Template(
+            frame.copy(),
+            spec,
+            () if _is_unit_scale(self._scale) else _phase_variants(frame),
+        )
         stale = [
             region_cache_key
             for region_cache_key in self._region_cache
@@ -621,6 +689,8 @@ class TemplateMatcher:
             template_width,
             template_height,
             confidence or template.spec.confidence or self._confidence,
+            self._refine_margin,
+            self._refine_band,
             x1,
             y1,
         )
@@ -645,6 +715,49 @@ class TemplateMatcher:
                 self._condition_template(frame),
                 spec=specs.get(filename.stem),
             )
+
+    def _refine_callback(
+        self, frame: numpy.ndarray, template_id: str
+    ) -> collections.abc.Callable[[Rect], float] | None:
+        """Phase-recovery callback for `_ScoreMap.best`, or None at unit scale."""
+        if _is_unit_scale(self._scale):
+            return None
+
+        return lambda rect: self._refine_confidence(frame, template_id, rect)
+
+    def _refine_confidence(
+        self, frame: numpy.ndarray, template_id: str, rect: Rect
+    ) -> float:
+        """Best phase-variant correlation in a small window around `rect`.
+
+        Phase misalignment depresses a match's score, but not its location (peak), so
+        re-scoring the peak neighborhood is enough to recover it.
+        """
+        template = self._templates[template_id]
+
+        if not template.variants:
+            return -1.0
+
+        # TODO: (if needed) default to refine when min(width, height) < 30, and per-template override
+
+        frame_height, frame_width = frame.shape[:2]
+        window = rect.inflate(_REFINE_PADDING).clamp(frame_width, frame_height)
+        x1, y1, x2, y2 = window.bounds
+
+        frame_slice = frame[y1:y2, x1:x2]
+
+        if template.spec.grayscale:
+            frame_slice = cv2.cvtColor(frame_slice, cv2.COLOR_BGR2GRAY)
+
+        return max(
+            (
+                float(
+                    cv2.matchTemplate(frame_slice, variant, cv2.TM_CCOEFF_NORMED).max()
+                )
+                for variant in template.variants
+            ),
+            default=-1.0,
+        )
 
     def get_template(self, template_id: str) -> Template:
         """Return the registered template for `template_id`."""
@@ -696,7 +809,9 @@ class TemplateMatcher:
         if score_map is None:
             return None
 
-        template_match = score_map.best()
+        template_match = score_map.best(
+            refine=self._refine_callback(frame, template_id)
+        )
 
         if template_match is None:
             return None
@@ -740,7 +855,9 @@ class TemplateMatcher:
         while True:
             candidates = []
             for score_map in score_maps:
-                template_match = score_map.best()
+                template_match = score_map.best(
+                    refine=self._refine_callback(frame, score_map.template_id)
+                )
 
                 if template_match is not None:
                     candidates.append(template_match)
