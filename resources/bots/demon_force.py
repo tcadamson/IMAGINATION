@@ -14,7 +14,7 @@ import core.api
 
 _FLATNESS_RATIO: typing.Final = 0.8
 
-_DIMMED_EFFECT_RATIO: typing.Final = 0.92
+_DIMMED_EFFECT_RATIO: typing.Final = 0.88
 _DIMMED_SLOT_RATIO: typing.Final = 0.85
 
 _EXHAUSTED_DEBOUNCE_SECONDS: typing.Final = 0.3
