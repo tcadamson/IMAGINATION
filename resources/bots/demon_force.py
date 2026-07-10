@@ -87,6 +87,15 @@ class DemonForceBotConfig(core.api.BotConfig):
     nra_phys: bool = dataclasses.field(
         default=False, metadata={"help": "Physical reflect/null."}
     )
+    nra_spread: bool = dataclasses.field(
+        default=False, metadata={"help": "Spread drain/reflect/null."}
+    )
+    resist_spread: bool = dataclasses.field(
+        default=False, metadata={"help": "Spread resist."}
+    )
+    all_stat: bool = dataclasses.field(
+        default=False, metadata={"help": "All stat boost."}
+    )
     attack: bool = dataclasses.field(
         default=False, metadata={"help": "Attack action boost."}
     )
@@ -121,25 +130,46 @@ class DemonForceBotConfig(core.api.BotConfig):
     pup: bool = dataclasses.field(default=False, metadata={"help": "Pursuit power."})
 
     @property
-    def whitelist(self) -> tuple[str, ...]:
-        """Collection of template_ids corresponding to the whitelist flags passed."""
+    def whitelist(self) -> tuple[_WhitelistRule, ...]:
+        """Rules corresponding to the whitelist flags passed."""
         return tuple(
-            template_id
-            for flag, template_ids in _WHITELIST_TEMPLATE_IDS.items()
-            if getattr(self, flag)
-            for template_id in template_ids
+            rule for flag, rule in _WHITELIST_RULES.items() if getattr(self, flag)
         )
 
 
-_WHITELIST_TEMPLATE_IDS: typing.Final[
-    collections.abc.Mapping[str, str | tuple[str, ...]]
-] = {
-    flag: (
-        (f"whitelist_{flag}_0", f"whitelist_{flag}_1")
-        if flag in ("nra_magic", "nra_phys")
+@dataclasses.dataclass(frozen=True)
+class _WhitelistRule:
+    template_ids: tuple[str, ...]
+    is_resist: bool | None = None  # True: require boost_arrow present
+
+    def matches(
+        self, observation: core.api.Observation, roll_rect: core.api.Rect
+    ) -> bool:
+        locate_params = core.api.LocateParams(roll_rect)
+
+        if (
+            observation.locate_any(self.template_ids, locate_params=locate_params)
+            is None
+        ):
+            return False
+
+        return self.is_resist is None or self.is_resist is (
+            observation.locate("boost_arrow", locate_params=locate_params) is not None
+        )
+
+
+_WHITELIST_RULES: typing.Final[collections.abc.Mapping[str, _WhitelistRule]] = {
+    flag: _WhitelistRule(
+        tuple(f"whitelist_{flag}_{i}" for i in range(3))
+        if flag.startswith("nra_")
         else (f"whitelist_{flag}",)
     )
     for flag in DemonForceBotConfig.__annotations__
+} | {
+    "nra_magic": _WhitelistRule(tuple(f"whitelist_nra_magic_{i}" for i in range(2))),
+    "nra_phys": _WhitelistRule(tuple(f"whitelist_nra_phys_{i}" for i in range(2))),
+    "nra_spread": _WhitelistRule(("whitelist_spread",), is_resist=False),
+    "resist_spread": _WhitelistRule(("whitelist_spread",), is_resist=True),
 }
 
 
@@ -270,11 +300,9 @@ class DemonForceBot(core.api.Bot):
                 )
                 roll_rect = yes_button.rect.relative(-63, -188, 36, 36)
 
-                if (
-                    yes_button_observation.locate_any(
-                        whitelist, locate_params=core.api.LocateParams(roll_rect)
-                    )
-                    is None
+                if not any(
+                    rule.matches(yes_button_observation, roll_rect)
+                    for rule in whitelist
                 ):
                     self.session.click(yes_button.rect.center)
 
@@ -289,14 +317,14 @@ class DemonForceBot(core.api.Bot):
 
         self.session.click(demon_force_sentinel.rect.center.offset(-280, 380))
 
-        if not self.queue:
+        if not self._queue:
             demon_force_items = observation.locate_all(
                 tuple(_DEMON_FORCE_ITEM_EFFECTS),
                 locate_params=core.api.LocateParams(
                     region=demon_force_sentinel.rect.relative(0, 100, 365, 180),
                 ),
             )
-            self.queue = collections.deque(
+            self._queue = collections.deque(
                 (template_match.template_id, template_match.rect)
                 for template_match in demon_force_items
             )
@@ -329,8 +357,8 @@ class DemonForceBot(core.api.Bot):
             return predicate
 
         available_effect = None
-        while available_effect is None and self.queue:
-            template_id, rect = self.queue[0]
+        while available_effect is None and self._queue:
+            template_id, rect = self._queue[0]
 
             if (
                 self.session.observe().locate(
@@ -338,7 +366,7 @@ class DemonForceBot(core.api.Bot):
                 )
                 is None
             ):
-                self.queue.popleft()
+                self._queue.popleft()
                 continue
 
             self.session.click(rect.center)
@@ -356,7 +384,7 @@ class DemonForceBot(core.api.Bot):
                     break
 
             if available_effect is None:
-                self.queue.popleft()
+                self._queue.popleft()
                 continue
 
             self.session.click(available_effect.rect.center)
@@ -400,9 +428,9 @@ class DemonForceBot(core.api.Bot):
                 break
 
             available_effect = None  # Demon force item exhausted; move on to the next
-            self.queue.popleft()
+            self._queue.popleft()
 
-        if not self.queue:
+        if not self._queue:
             raise RuntimeError(
                 "Demon force items exhausted or missing."
             )  # TODO: Finished event
@@ -427,7 +455,6 @@ SPEC: typing.Final = core.api.BotSpec(
     any roll or category of roll not included in the set of options passed.
     
     \b
-    Example (whitelist mode):
-    run demon_force --nra-magic --nra-phys --shot --lbp --tap
+    Item priority: green sands > red sands > blue sands > scabbards > loops.
     """,
 )
