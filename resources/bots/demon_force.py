@@ -243,18 +243,21 @@ class DemonForceBot(core.api.Bot):
                         "Failed to determine the summoned demon. (Is it summoned?)"
                     )
 
-                observation.register_frame_slice(
-                    "summoned",
-                    summoned_sentinel.rect.relative(32, -7, 30, 13),
-                )
+                summoned_rect = summoned_sentinel.rect.relative(32, -7, 30, 13)
+                # observation.register_frame_slice("summoned", summoned_rect)
                 break
-        self.session.click_template("summoned")
+        self.session.click(summoned_rect.center)
+        # self.session.click_template("summoned")
 
         if self.session.observe().locate("demon_information_sentinel") is None:
-            self.session.click_template(
-                "summoned",
+            self.session.click(
+                summoned_rect.center,
                 click_params=core.api.ClickParams(button=pydirectinput.MOUSE_SECONDARY),
             )
+            # self.session.click_template(
+            #     "summoned",
+            #     click_params=core.api.ClickParams(button=pydirectinput.MOUSE_SECONDARY),
+            # )
 
         observation, demon_information_sentinel = self.session.observe_until(
             self.session.present("demon_information_sentinel")
