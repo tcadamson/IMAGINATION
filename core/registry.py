@@ -9,11 +9,14 @@ import json
 import logging
 import os
 import pathlib
+import ssl
 import sys
 import tarfile
 import tempfile
 import typing
 import urllib.request
+
+import truststore
 
 import core.api
 import core.paths
@@ -30,7 +33,10 @@ def _request_archive(
 ) -> dict[str, bytes]:
     """Download the stable branch tarball, keyed by relative path."""
     archive = {}
-    with urllib.request.urlopen(url, timeout=timeout) as response:
+    context = truststore.SSLContext(
+        ssl.PROTOCOL_TLS_CLIENT
+    )  # Solves SSL: CERTIFICATE_VERIFY_FAILED
+    with urllib.request.urlopen(url, timeout=timeout, context=context) as response:
         data = response.read()
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
         for member in tar:
