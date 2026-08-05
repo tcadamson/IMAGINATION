@@ -392,7 +392,7 @@ class Actions:
 class Client:
     """Handle and associated functions for a single IMAGINE client window."""
 
-    CLIENT_IDENTIFIER: typing.Final = "IMAGINE Version 1."
+    CLIENT_IDENTIFIER: typing.Final = "IMAGINE Version"
 
     def __init__(self, window: pywinctl.Window):
         self._window = window
