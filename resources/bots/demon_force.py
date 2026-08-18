@@ -3,6 +3,8 @@
 import collections.abc
 import dataclasses
 import enum
+import keyword
+import re
 import time
 import typing
 
@@ -11,6 +13,7 @@ import numpy
 import pydirectinput
 
 import core.api
+import core.paths
 
 _FLATNESS_RATIO: typing.Final = 0.8
 
@@ -77,7 +80,56 @@ def _flatness(frame: numpy.ndarray, rect: core.api.Rect, tol: float = 18.0) -> f
     return float(numpy.mean(distances < tol))
 
 
+def _register_whitelist_flags() -> dict[str, tuple[str, ...]]:
+    """Map whitelist flags to their associated templates.
+
+    All templates prefixed with "whitelist_" are automatically added as flags; users
+    may supply their own whitelist options this way. Trailing single-digit suffixes are
+    treated as alternate templates for the same flag.
+    """
+    flags: dict[str, list[str]] = {}
+    for path in sorted(
+        (core.paths.TEMPLATE_DIRECTORY / "demon_force").glob("whitelist_*.png")
+    ):
+        template_id = path.stem
+
+        if re.fullmatch(
+            r"whitelist_spread(_\d)?", template_id
+        ):  # Special case; template used by multiple flags
+            continue
+
+        flags.setdefault(
+            re.sub(r"_\d$", "", template_id.removeprefix("whitelist_")), []
+        ).append(template_id)
+    return {flag: tuple(sorted(template_ids)) for flag, template_ids in flags.items()}
+
+
+_REGISTERED_WHITELIST_FLAGS = _register_whitelist_flags()
+
+
+def _include_custom_whitelist_flags(cls: type) -> type:
+    """Decorator adding all custom whitelist flags to the whitelist configuration.
+
+    Filenames whose derived flags would be invalid are skipped.
+    """
+    for flag in _REGISTERED_WHITELIST_FLAGS:
+        if (
+            flag in cls.__annotations__
+            or not flag.isidentifier()
+            or keyword.iskeyword(flag)
+            or hasattr(cls, flag)  # Inherited fields, e.g. cycles_limit
+        ):
+            continue
+
+        cls.__annotations__[flag] = bool
+        setattr(
+            cls, flag, dataclasses.field(default=False, metadata={"help": "CUSTOM"})
+        )
+    return cls
+
+
 @dataclasses.dataclass(frozen=True)
+@_include_custom_whitelist_flags
 class DemonForceBotConfig(core.api.BotConfig):
     """Demon force bot whitelist configuration."""
 
@@ -159,15 +211,9 @@ class _WhitelistRule:
 
 
 _WHITELIST_RULES: typing.Final[collections.abc.Mapping[str, _WhitelistRule]] = {
-    flag: _WhitelistRule(
-        tuple(f"whitelist_{flag}_{i}" for i in range(3))
-        if flag.startswith("nra_")
-        else (f"whitelist_{flag}",)
-    )
+    flag: _WhitelistRule(_REGISTERED_WHITELIST_FLAGS.get(flag, (f"whitelist_{flag}",)))
     for flag in DemonForceBotConfig.__annotations__
 } | {
-    "nra_magic": _WhitelistRule(tuple(f"whitelist_nra_magic_{i}" for i in range(2))),
-    "nra_phys": _WhitelistRule(tuple(f"whitelist_nra_phys_{i}" for i in range(2))),
     "nra_spread": _WhitelistRule(("whitelist_spread",), is_resist=False),
     "resist_spread": _WhitelistRule(("whitelist_spread",), is_resist=True),
 }
@@ -456,8 +502,11 @@ SPEC: typing.Final = core.api.BotSpec(
     Normally, the bot will wait for you to accept or discard a role before continuing.
     Including any of the below options will put the bot in whitelist mode and discard
     any roll or category of roll not included in the set of options passed.
-    
-    \b
-    Item priority: green sands > red sands > blue sands > scabbards > loops.
+
+    Any custom whitelist templates (prefixed with "whitelist_") will be added as
+    options after a client restart. Put the templates in this directory:
+    %LOCALAPPDATA%\\IMAGINATION\\resources\\templates\\demon_force
+
+    Item priority: green sands > red sands > blue sands > scabbards > loops
     """,
 )
