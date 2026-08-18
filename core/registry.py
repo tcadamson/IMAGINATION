@@ -108,7 +108,10 @@ def register_bot_directory(
             spec.loader.exec_module(module)
             bots[bot_id] = dataclasses.replace(module.SPEC, bot_id=bot_id)
         except Exception:
-            if module_cached is None:  # Don't discard previously working version
+            if module_cached is not None:  # Don't discard previously working module
+                sys.modules[module_id] = module_cached
+                bots[bot_id] = dataclasses.replace(module_cached.SPEC, bot_id=bot_id)
+            else:
                 sys.modules.pop(module_id, None)
 
             _logger.exception("Failed to load bot: %s", path)
