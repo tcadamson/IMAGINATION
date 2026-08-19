@@ -117,7 +117,7 @@ def _cli_presets_callback() -> None:
     """Manage command presets.
 
     To edit existing presets and/or add your own, edit presets.json at
-    %LOCALAPPDATA%\\IMAGINATION\\resources\\
+    %LOCALAPPDATA%\\IMAGINATION\\resources
     """
 
 
@@ -155,7 +155,9 @@ def _cli_presets_load() -> None:
             print(f"Skipping preset with reserved name: {preset_id}")
             continue
 
-        _cli.command(name=preset_id, help=line)(_generate_preset_command(line))
+        _cli.command(name=preset_id, help=line, hidden=True)(
+            _generate_preset_command(line)
+        )
         _preset_names.add(preset_id)
         reserved.add(preset_id)
 
