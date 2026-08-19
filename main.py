@@ -194,6 +194,12 @@ def update() -> None:
             _error_dialog(exception)
             stale_bot_ids = set()
 
+        for path in core.paths.TEMPLATE_DIRECTORY.rglob("specs.default.json"):
+            specs_path = path.with_name("specs.json")
+
+            if not specs_path.exists():
+                specs_path.write_text("{}\n", encoding="utf-8")
+
     print("Done.")
     for spec in core.registry.register_bot_directory(
         core.paths.BOT_DIRECTORY, stale_bot_ids

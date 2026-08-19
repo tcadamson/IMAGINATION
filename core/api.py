@@ -229,24 +229,34 @@ class TemplateSpec:
 
 
 def _load_template_specs(template_directory: pathlib.Path) -> dict[str, TemplateSpec]:
-    """Parse specs colocated in `template_directory` into specs keyed by template.
+    """Load specs colocated in `template_directory` into specs keyed by template.
 
-    Absent file means no overrides. Tracked from the repo, so a template's spec can be
-    updated without a client release.
+    Absent file means no overrides. Defaults tracked from the repo, so a template's
+    spec can be updated without a client release. User-authored specs.json shadows the
+    tracked specs.default.json.
     """
-    path = template_directory / "specs.json"
+    specs = {}
+    for path in (
+        template_directory / "specs.default.json",
+        template_directory / "specs.json",
+    ):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        except json.JSONDecodeError as exception:
+            raise RuntimeError(f"Malformed JSON at {path}") from exception
 
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return {}
-    except json.JSONDecodeError as exception:
-        raise RuntimeError(f"Malformed JSON at {path}") from exception
+        if not isinstance(data, dict):
+            raise RuntimeError(f"Expected object at {path}")
 
-    try:
-        return {template_id: TemplateSpec(**spec) for template_id, spec in data.items()}
-    except TypeError as exception:
-        raise RuntimeError(f"Invalid spec at {path}") from exception
+        try:
+            specs |= {
+                template_id: TemplateSpec(**spec) for template_id, spec in data.items()
+            }
+        except TypeError as exception:
+            raise RuntimeError(f"Invalid spec at {path}") from exception
+    return specs
 
 
 @dataclasses.dataclass(frozen=True)
