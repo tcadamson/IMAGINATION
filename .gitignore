@@ -1,5 +1,6 @@
 archive/
 *.log
+*.log.*
 .vscode/
 
 # Python-generated files

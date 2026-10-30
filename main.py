@@ -10,6 +10,7 @@ import typing
 import typer
 import typer.core
 
+import core.output
 import core.paths
 import core.presets
 import core.registry
@@ -59,6 +60,8 @@ _cli_presets = typer.Typer(no_args_is_help=True)
 _preset_names: set[str] = set()
 
 _group: typer.core.TyperGroup | None = None
+
+_logger: logging.Logger = logging.getLogger(__name__)
 
 
 @_cli_run.callback()
@@ -118,7 +121,7 @@ def _cli_presets_load() -> None:
     global _group
     _group = typer.main.get_group(_cli)
 
-    logging.info(f"Loaded {len(_preset_names)} preset(s)")
+    _logger.info(f"Loaded {len(_preset_names)} preset(s)")
 
 
 @_cli.callback(help=None)
@@ -141,7 +144,7 @@ def update() -> None:
         try:
             core.registry.sync()
         except Exception as exception:  # Update attempt is best-effort
-            logging.exception("Update failed:")
+            _logger.exception("Update failed:")
             _error_dialog(exception)
 
     print("Done.")
@@ -181,21 +184,12 @@ def _guard(callback: collections.abc.Callable[[], None]) -> None:
     except SystemExit:  # Raised by typer internals
         pass
     except Exception as exception:
-        logging.exception("Fatal exception:")
+        _logger.exception("Fatal exception:")
         _error_dialog(exception)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(
-                core.paths.USER_DIRECTORY / "debug.log", encoding="utf-8"
-            ),
-        ],
-    )
+    core.output.setup()
     _cli.add_typer(_cli_presets, name="presets")
     _cli.add_typer(_cli_run, name="run")
     _guard(update)

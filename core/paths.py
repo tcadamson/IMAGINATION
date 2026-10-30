@@ -1,5 +1,6 @@
 """User data directory layout for IMAGINATION resources."""
 
+import logging
 import os
 import pathlib
 import shutil
@@ -19,6 +20,8 @@ USER_DIRECTORY: typing.Final = (
     else platformdirs.user_data_path("IMAGINATION", appauthor=False, ensure_exists=True)
 )
 
+_logger: logging.Logger = logging.getLogger(__name__)
+
 
 def migrate() -> None:
     """Handle cleanup of resources following project reorganization.
@@ -27,6 +30,8 @@ def migrate() -> None:
     reorganization kept all resources at the root level of the user directory.
 
     Remove installed bots and their templates, as template matching was removed.
+
+    Remove the legacy debug.log, as the log became the rotating IMAGINATION.log.
     """
     for legacy_directory in (
         USER_DIRECTORY / "bots",
@@ -35,3 +40,7 @@ def migrate() -> None:
         USER_DIRECTORY / "resources" / "templates",
     ):
         shutil.rmtree(legacy_directory, ignore_errors=True)
+    try:
+        (USER_DIRECTORY / "debug.log").unlink(missing_ok=True)
+    except PermissionError:  # Held by a running IMAGINATION older than 2.0.0
+        _logger.debug("debug.log is in use; removing it at a later update")
