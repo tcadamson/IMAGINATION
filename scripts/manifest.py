@@ -1,7 +1,7 @@
 """Regenerate manifest.json from the repository tree.
 
 Lives in the repository, not the client. Run after editing any resource, commit,
-and fast-forward the stable branch to go live.
+and fast-forward the update branch (stable, or beta for testers) to go live.
 
 Entries downloaded from a URL (the bot bundle) are not files of the tree; they are kept
 as they are, and changed by the release that uploads them.

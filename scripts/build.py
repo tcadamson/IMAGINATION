@@ -6,9 +6,13 @@ to be determined via `sys.base_prefix`.
 
 As added convenience, the project name and version may be retrieved dynamically.
 
-Run with `uv run python -m scripts.build build`.
+--branch names the branch the build takes its updates from: beta for builds given to
+testers, stable for releases.
+
+Run with `uv run python -m scripts.build build --branch stable`.
 """
 
+import argparse
 import collections.abc
 import pathlib
 import shutil
@@ -62,6 +66,10 @@ _BUNDLE_MODULES: typing.Final = (
     "zlib",
 )
 
+_parser = argparse.ArgumentParser(allow_abbrev=False)
+_parser.add_argument("--branch", choices=("stable", "beta"), required=True)
+_arguments, sys.argv[1:] = _parser.parse_known_args()  # The rest are cx_Freeze's
+
 with open(pathlib.Path(__file__).parents[1] / "pyproject.toml", "rb") as fp:
     PROJECT: typing.Final[collections.abc.Mapping[str, typing.Any]] = tomllib.load(fp)[
         "project"
@@ -89,6 +97,7 @@ cx_Freeze.setup(
             "build_exe": str(BUILD_DIRECTORY),
             "include_files": ["LICENSE"],
             "includes": [*_BUNDLE_MODULES],
+            "constants": [f"BRANCH={_arguments.branch!r}"],
             "bin_excludes": [*_DEFAULT_BIN_EXCLUDES],
             "bin_path_includes": [sys.base_prefix],
         }

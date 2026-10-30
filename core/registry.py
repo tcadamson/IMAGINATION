@@ -1,4 +1,4 @@
-"""Synchronize IMAGINATION resources with the stable branch."""
+"""Synchronize IMAGINATION resources with the branch updates come from."""
 
 import collections.abc
 import hashlib
@@ -21,7 +21,7 @@ import core
 import core.paths
 
 _ARCHIVE_URL: typing.Final = (
-    "https://codeload.github.com/tcadamson/IMAGINATION/tar.gz/refs/heads/stable"
+    f"https://codeload.github.com/tcadamson/IMAGINATION/tar.gz/refs/heads/{core.BRANCH}"
 )
 _RELEASES_URL: typing.Final = "https://github.com/tcadamson/IMAGINATION/releases"
 
@@ -45,14 +45,14 @@ def _request(url: str, timeout: float = 30.0) -> bytes:
 
 
 def _request_archive(url: str = _ARCHIVE_URL) -> dict[str, bytes]:
-    """Download the stable branch tarball, keyed by relative path."""
+    """Download the update branch tarball, keyed by relative path."""
     archive = {}
     data = _request(url)
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
         for member in tar:
             extracted = tar.extractfile(member) if member.isfile() else None
 
-            if extracted is not None:  # Strip the top-level "IMAGINATION-stable/"
+            if extracted is not None:  # Strip the top-level "IMAGINATION-<branch>/"
                 archive[member.name.partition("/")[2]] = extracted.read()
     return archive
 
