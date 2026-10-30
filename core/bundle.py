@@ -33,6 +33,7 @@ import time
 import typing
 
 import core.api
+import core.output
 import core.paths
 import core.worker
 
@@ -204,7 +205,7 @@ class _Relay(threading.Thread):
             return
 
         if message.get("kind") == "print":
-            print(message["text"])
+            core.output.show(message["text"])
             return
 
         level, created, exc = message["level"], message["created"], message["exc"]

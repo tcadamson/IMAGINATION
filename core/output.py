@@ -37,6 +37,10 @@ _LOG_BACKUPS: typing.Final = 3
 
 _console: logging.Handler | None = None
 
+_printed: logging.Logger = logging.getLogger(
+    "printed"
+)  # What a bot prints, for the log file alone: the console has it already
+
 
 def capitalize(text: str) -> str:
     """Return `text` with its first character in upper case, the rest unchanged."""
@@ -93,6 +97,15 @@ def setup() -> None:
     root.setLevel(logging.DEBUG)
     root.addHandler(_console)
     root.addHandler(log_file)
+    _printed.propagate = False
+    _printed.addHandler(log_file)
+
+
+def show(text: str) -> None:
+    """Print `text`, a line a bot was run to show, and log it to the log file, so that a
+    log sent with a report holds the bot's results too."""
+    print(text)
+    _printed.info("%s", text)
 
 
 @contextlib.contextmanager
