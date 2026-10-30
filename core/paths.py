@@ -19,6 +19,7 @@ USER_DIRECTORY: typing.Final = (
     if _USER_DIRECTORY_OVERRIDE
     else platformdirs.user_data_path("IMAGINATION", appauthor=False, ensure_exists=True)
 )
+BUNDLE_DIRECTORY: typing.Final = USER_DIRECTORY / "resources" / "bundles"
 
 _logger: logging.Logger = logging.getLogger(__name__)
 
