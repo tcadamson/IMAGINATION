@@ -12,12 +12,13 @@ import typer._click.decorators
 import typer._click.exceptions
 import typer.core
 
+import core
 import core.output
 import core.paths
 import core.presets
 import core.registry
 
-_BANNER: typing.Final = r"""
+_BANNER: typing.Final = rf"""
 
 6666666666666666666666666
 6666666666666666666666666
@@ -26,7 +27,7 @@ _BANNER: typing.Final = r"""
 666666   666666   6666666   Automation framework for the SMT: IMAGINE client
 6666666666666666666666666   Bots for rebirth, demon force, and more
 666   66        66   6666
-666    6        6    6666   Version: v2.0.0-beta.5
+666    6        6    6666   Version: {core.version_text()}
 6666                66666   Repo: https://github.com/tcadamson/IMAGINATION
 6666666666666666666666666
 6666666666666666666666666

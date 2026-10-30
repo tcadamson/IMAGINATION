@@ -18,6 +18,8 @@ import typing
 
 import cx_Freeze
 
+import core
+
 # Specifying bin_path_includes voids the default bin_excludes; restore them
 # https://github.com/marcelotduarte/cx_Freeze/blob/29f21da72e64e21cacd47f47206edc82f3e49e94/cx_Freeze/freezer.py#L1094
 _DEFAULT_BIN_EXCLUDES: typing.Final = (
@@ -47,8 +49,14 @@ with open(pathlib.Path(__file__).parents[1] / "pyproject.toml", "rb") as fp:
 PROJECT_NAME: typing.Final = PROJECT["name"]
 PROJECT_VERSION: typing.Final = PROJECT["version"]
 
+if PROJECT_VERSION != core.VERSION:
+    sys.exit(
+        f"Can't build: pyproject.toml's version {PROJECT_VERSION} differs from "
+        f"core.VERSION {core.VERSION}; bump both"
+    )
+
 BUILD_DIRECTORY: typing.Final = (
-    pathlib.Path("build") / f"{PROJECT_NAME}_v{PROJECT_VERSION.replace('b', '-beta.')}"
+    pathlib.Path("build") / f"{PROJECT_NAME}_{core.version_text(PROJECT_VERSION)}"
 )
 
 cx_Freeze.setup(
