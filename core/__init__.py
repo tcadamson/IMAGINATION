@@ -4,7 +4,7 @@ import importlib
 import re
 import typing
 
-VERSION: typing.Final = "2.0.0b5"  # Equal to pyproject.toml's, which the build checks
+VERSION: typing.Final = "2.0.0rc1"  # Equal to pyproject.toml's, which the build checks
 
 _PRE_RELEASE_NAMES: typing.Final = {"a": "alpha", "b": "beta", "rc": "rc"}
 
