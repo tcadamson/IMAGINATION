@@ -1,0 +1,310 @@
+{
+  "bundle": "bc4515ec3520dcb972cb97616d371a918d572577b3483de96e7268107f6be3a3",
+  "bots": {
+    "rebirth": {
+      "help": "Rebirth partner to the specified ranks\n\nStart in the cathedral and the bot will move you to the correct location. With --mitama, a mitama fusion will be performed and --mitama-ranks becomes required. After any stop, the same command will continue where you left off\n\n--check will validate your run without running",
+      "options": {
+        "ranks": {
+          "type": "str",
+          "help": "One digit for every path, or 12 digits, one per path in order (Tiwaz to Wyrd)"
+        },
+        "mitama": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "max": 4,
+          "help": "The mitama to fuse partner with between the two ranks: 1 Ara, 2 Nigi, 3 Kusi, 4 Saki"
+        },
+        "mitama_ranks": {
+          "type": "str",
+          "default": null,
+          "help": "The ranks after the mitama fusion, as --ranks"
+        },
+        "end_path": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "max": 12,
+          "help": "The path partner ends on, 1 to 12"
+        },
+        "check": {
+          "type": "bool",
+          "default": false,
+          "help": "Show what the run would do, what it costs, and what would stop it"
+        }
+      }
+    },
+    "tmg": {
+      "help": "Farm hazel branches without wanting to mudo yourself\n\nStart in the TMG lobby and the bot will move and interact as necessary, leaving only the Lucifuge fight to be done manually\n\nThe bot automatically loots from the box: Magnetite, MAG Presser α, Hazel Branches, Hazel Wand, DCM: Lucifuge, DS: Lucifuge",
+      "options": {
+        "cycles": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "How many cycles to do; infinite otherwise"
+        },
+        "false": {
+          "type": "bool",
+          "default": false,
+          "help": "Go straight to the roof, keeping the ghosts (two MAG Presser α per cycle)"
+        }
+      }
+    },
+    "demon_force": {
+      "help": "Roll demon force items on partner\n\nNormally, the bot will wait for you to accept or discard a roll before continuing. Including any of the aliases below will put the bot in whitelist mode and discard any roll or category of roll not included in the set of aliases passed\n\nMatch any other effect by its name, using hyphens for spaces, and the lowest value kept (0 for any), e.g. --spread-resist 30\n\nItem priority: green sands > red sands > blue sands > scabbards > loops",
+      "options": {
+        "rolls": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "How many rolls to make; without it, until the items run out"
+        },
+        "attack": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of Attack Damage at N or more; 0 for any"
+        },
+        "rapid": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of Rapid Damage at N or more; 0 for any"
+        },
+        "rush": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of Rush Damage at N or more; 0 for any"
+        },
+        "shot": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of Shot Damage at N or more; 0 for any"
+        },
+        "spin": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of Spin Damage at N or more; 0 for any"
+        },
+        "lbp": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of Limit Break Power at N or more; 0 for any"
+        },
+        "lbc": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of Limit Break Chance at N or more; 0 for any"
+        },
+        "fcc": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 50,
+          "help": "Keep rolls of Final Crit at N or more; 0 for any"
+        },
+        "tac": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of TA Chance at N or more; 0 for any"
+        },
+        "tap": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of TA Power at N or more; 0 for any"
+        },
+        "puc": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of Pursuit Chance at N or more; 0 for any"
+        },
+        "pup": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of Pursuit Power at N or more; 0 for any"
+        },
+        "null_magic": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of Null All Magic at N or more; 0 for any"
+        },
+        "reflect_magic": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of Reflect All Magic at N or more; 0 for any"
+        },
+        "null_phys": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of Null All Physical at N or more; 0 for any"
+        },
+        "reflect_phys": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 100,
+          "help": "Keep rolls of Reflect All Physical at N or more; 0 for any"
+        },
+        "all_stat": {
+          "type": "int",
+          "default": null,
+          "min": 0,
+          "max": 50,
+          "help": "Keep rolls of all six stats at N or more; 0 for any"
+        }
+      },
+      "extra": true
+    },
+    "mitama_socket": {
+      "help": "Allocate mitama on partner according to the specified plan\n\nStart in the cathedral and the bot will move you to the correct location. The bot adds only what partner lacks from the plan and never removes. For the plan, you may input a string matching the specified format, or a share link from https://new-moon-database.streamlit.app/mitama\n\n--check will validate your run without running",
+      "options": {
+        "plan": {
+          "type": "str",
+          "help": "12 words, one per path in order, a letter and a count for each type the path holds (A Ara, N Nigi, K Kusi, S Saki), - for none; alternatively, the share link"
+        },
+        "check": {
+          "type": "bool",
+          "default": false,
+          "help": "Show what the run would allocate, what it costs, and what would stop it"
+        }
+      }
+    },
+    "mitama_reroll": {
+      "help": "Allocate and remove mitama until the specified path reaches a stat target\n\nStart in the cathedral and the bot will move you to the correct location. Allocates mitama according to the specified mix, repeating until either the total stat bonus for that path reaches the target, or the target is determined to be out of reach. If out of reach, it removes the mitama and tries again",
+      "options": {
+        "path": {
+          "type": "int",
+          "min": 1,
+          "max": 12,
+          "help": "The path to fill, 1 to 12"
+        },
+        "mix": {
+          "type": "str",
+          "default": null,
+          "help": "The mitama to fill it with, as a plan word (e.g. K4S4); without it, what the path holds"
+        },
+        "attempts": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "How many attempts; without it, until the mitama or the macca run out"
+        },
+        "check": {
+          "type": "bool",
+          "default": false,
+          "help": "Show what the run would do, what it costs, its odds, and what would stop it"
+        },
+        "strength": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "Reach a total of Strength of N or more over the path's slots"
+        },
+        "magic": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "Reach a total of Magic of N or more over the path's slots"
+        },
+        "vitality": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "Reach a total of Vitality of N or more over the path's slots"
+        },
+        "intelligence": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "Reach a total of Intelligence of N or more over the path's slots"
+        },
+        "speed": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "Reach a total of Speed of N or more over the path's slots"
+        },
+        "luck": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "Reach a total of Luck of N or more over the path's slots"
+        },
+        "max_hp": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "Reach a total of Max HP of N or more over the path's slots"
+        },
+        "max_mp": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "Reach a total of Max MP of N or more over the path's slots"
+        },
+        "close_range": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "Reach a total of Close-Range of N or more over the path's slots"
+        },
+        "long_range": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "Reach a total of Long-Range of N or more over the path's slots"
+        },
+        "spell": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "Reach a total of Spell of N or more over the path's slots"
+        },
+        "support": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "Reach a total of Support of N or more over the path's slots"
+        },
+        "phys_defense": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "Reach a total of Phys. Defense of N or more over the path's slots"
+        },
+        "mag_defense": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "Reach a total of Mag. Defense of N or more over the path's slots"
+        }
+      }
+    }
+  }
+}

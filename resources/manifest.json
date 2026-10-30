@@ -1,3 +1,9 @@
 {
+    "resources/bots.json": "398e630103f3299f6507c62dc1805f16f395f18e16fbb0d9835089cd3dd9d776",
+    "resources/bundles/bc4515ec3520dcb972cb97616d371a918d572577b3483de96e7268107f6be3a3.pyd": {
+        "requires": "2.0.0rc1",
+        "sha256": "bc4515ec3520dcb972cb97616d371a918d572577b3483de96e7268107f6be3a3",
+        "url": "https://github.com/tcadamson/IMAGINATION/releases/download/v2.0.0-rc.1/bundle.cp314-win_amd64.pyd"
+    },
     "resources/presets.default.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
 }
