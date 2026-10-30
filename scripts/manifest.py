@@ -1,6 +1,6 @@
 """Regenerate manifest.json from the repository tree.
 
-Lives in the repository, not the client. Run after editing any bot or template, commit,
+Lives in the repository, not the client. Run after editing any resource, commit,
 and fast-forward the stable branch to go live.
 
 Run with `uv run python -m scripts.manifest`.
@@ -17,14 +17,6 @@ _MANIFEST_PATH: typing.Final = core.api.ROOT_DIRECTORY / "resources" / "manifest
 if __name__ == "__main__":
     paths = [
         core.api.ROOT_DIRECTORY / "resources" / "presets.default.json",
-        *sorted((core.api.ROOT_DIRECTORY / "resources" / "bots").glob("*.py")),
-        *(
-            path
-            for path in sorted(
-                (core.api.ROOT_DIRECTORY / "resources" / "templates").rglob("*")
-            )
-            if path.is_file()
-        ),
     ]
     manifest = {
         path.relative_to(core.api.ROOT_DIRECTORY).as_posix(): hashlib.sha256(

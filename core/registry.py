@@ -1,16 +1,12 @@
-"""Discover, synchronize, and register IMAGINATION bots."""
+"""Synchronize IMAGINATION resources with the stable branch."""
 
-import collections.abc
-import dataclasses
 import hashlib
-import importlib.util
 import io
 import json
 import logging
 import os
 import pathlib
 import ssl
-import sys
 import tarfile
 import tempfile
 import typing
@@ -18,7 +14,6 @@ import urllib.request
 
 import truststore
 
-import core.api
 import core.paths
 
 _ARCHIVE_URL: typing.Final = (
@@ -76,69 +71,14 @@ def _atomic_write(path: pathlib.Path, data: bytes) -> None:
         raise
 
 
-def register_bot_directory(
-    bot_directory: pathlib.Path, stale_bot_ids: collections.abc.Container[str] = ()
-) -> collections.abc.Mapping[str, core.api.BotSpec]:
-    """Import every bot module in `bot_directory`, keyed by file stem.
-
-    Modules already in sys.modules are reused, while a failed import keeps the
-    previously loaded version. Modules in `stale_bot_ids` are forced to re-import.
-    """
-    bots = {}
-    for path in sorted(bot_directory.glob("*.py")):
-        bot_id = path.stem
-
-        module_id = f"_bot_{bot_id}"
-        module_cached = sys.modules.get(module_id)
-
-        if module_cached is not None and bot_id not in stale_bot_ids:
-            bots[bot_id] = dataclasses.replace(module_cached.SPEC, bot_id=bot_id)
-            continue
-
-        try:
-            spec = importlib.util.spec_from_file_location(module_id, path)
-
-            if spec is None or spec.loader is None:
-                raise ImportError("No loadable module spec")
-
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[module_id] = (
-                module  # Executing before registering here would break dataclasses, among other things
-            )
-            spec.loader.exec_module(module)
-            bots[bot_id] = dataclasses.replace(module.SPEC, bot_id=bot_id)
-        except Exception:
-            if module_cached is not None:  # Don't discard previously working module
-                sys.modules[module_id] = module_cached
-                bots[bot_id] = dataclasses.replace(module_cached.SPEC, bot_id=bot_id)
-            else:
-                sys.modules.pop(module_id, None)
-
-            _logger.exception("Failed to load bot: %s", path)
-            continue
-
-        _logger.info("Loaded bot: %s", bot_id)
-    return bots
-
-
-def sync(archive: dict[str, bytes] | None = None) -> set[str]:
-    """Install each manifest entry whose local copy is absent or stale.
-
-    Return the stems of the files that were (re)installed.
-    """
-    stale_bot_ids: set[str] = set()
-
+def sync(archive: dict[str, bytes] | None = None) -> None:
+    """Install each manifest entry whose local copy is absent or stale."""
     if archive is None:
         archive = _request_archive()
 
     manifest: dict[str, str] = json.loads(archive["resources/manifest.json"])
 
-    for relative_path in sorted(
-        manifest,
-        key=lambda path: path.startswith(
-            f"{core.paths.BOT_DIRECTORY.relative_to(core.paths.USER_DIRECTORY).as_posix()}/"
-        ),  # Sort templates before the bots depending on them
-    ):
+    for relative_path in sorted(manifest):
         destination = _destination(relative_path)
         sha256_expected = manifest[relative_path]
 
@@ -157,6 +97,4 @@ def sync(archive: dict[str, bytes] | None = None) -> set[str]:
             )
 
         _atomic_write(destination, data)
-        stale_bot_ids.add(pathlib.PurePosixPath(relative_path).stem)
         _logger.info("Installed: %s", relative_path)
-    return stale_bot_ids
