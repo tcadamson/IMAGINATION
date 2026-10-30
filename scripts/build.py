@@ -41,6 +41,27 @@ _DEFAULT_BIN_EXCLUDES: typing.Final = (
     "ucrtbase.dll",
 )
 
+# The frozen program holds only the modules its own code imports. The bot bundle, loaded
+# by a worker at run time, imports these; another needs a new release
+_BUNDLE_MODULES: typing.Final = (
+    "base64",
+    "collections",
+    "contextlib",
+    "ctypes",
+    "ctypes.wintypes",
+    "dataclasses",
+    "functools",
+    "hashlib",
+    "json",
+    "logging",
+    "math",
+    "os",
+    "re",
+    "struct",
+    "time",
+    "zlib",
+)
+
 with open(pathlib.Path(__file__).parents[1] / "pyproject.toml", "rb") as fp:
     PROJECT: typing.Final[collections.abc.Mapping[str, typing.Any]] = tomllib.load(fp)[
         "project"
@@ -67,6 +88,7 @@ cx_Freeze.setup(
         "build_exe": {
             "build_exe": str(BUILD_DIRECTORY),
             "include_files": ["LICENSE"],
+            "includes": [*_BUNDLE_MODULES],
             "bin_excludes": [*_DEFAULT_BIN_EXCLUDES],
             "bin_path_includes": [sys.base_prefix],
         }

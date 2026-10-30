@@ -2,6 +2,7 @@
 
 import collections.abc
 import ctypes
+import inspect
 import logging
 import shlex
 import sys
@@ -14,6 +15,8 @@ import typer._click.exceptions
 import typer.core
 
 import core
+import core.api
+import core.bundle
 import core.output
 import core.paths
 import core.presets
@@ -70,8 +73,18 @@ _logger: logging.Logger = logging.getLogger(__name__)
 
 
 @_cli_run.callback()
-def _cli_run_callback() -> None:
+def _cli_run_callback(
+    ctx: typer.Context,
+    verbose: typing.Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            help="Show debug output in the console, in addition to the standard output",
+        ),
+    ] = False,
+) -> None:
     """Run one of the installed bots"""
+    ctx.obj = verbose
 
 
 @_cli_presets.callback()
@@ -139,6 +152,7 @@ def update() -> None:
 
     Automatically runs once on launch
     """
+    _cli_run.registered_commands = []
     _logger.info("Checking for updates...")
 
     if not core.paths.USER_DIRECTORY_OVERRIDE_PASSED:
@@ -152,19 +166,70 @@ def update() -> None:
             _error_dialog(exception)
 
     _logger.info("Done")
+    _register_bundled_bots()
 
     global _group
     _group = typer.main.get_group(_cli)
 
 
-def _error_dialog(exception: BaseException) -> None:
-    """Surface `exception` as a dialog above the active client."""
+def _register_bundled_bots() -> None:
+    """Register the bot bundle's bots from their catalog as run commands."""
+    try:
+        specs = core.bundle.load_catalog()
+    except Exception:  # Best-effort, as updates are
+        _logger.exception("can't read the bot catalog")
+        return
+
+    for spec in specs.values():
+        _cli_run.command(
+            name=spec.bot_id,
+            help=spec.help,
+            context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
+            if spec.extra
+            else None,
+        )(_generate_bundled_run_command(spec))
+
+    if specs:
+        _logger.info(
+            "Loaded %s: %s",
+            core.output.count(len(specs), "bot"),
+            ", ".join(specs),
+        )
+
+
+def _error_dialog(error: BaseException | str) -> None:
+    """Surface `error`, an exception or its text, as a dialog above the active client."""
     ctypes.windll.user32.MessageBoxW(
         None,
-        "".join(traceback.format_exception_only(type(exception), exception)),
+        error
+        if isinstance(error, str)
+        else "".join(traceback.format_exception_only(type(error), error)),
         "IMAGINATION",
         0x10 | 0x00001000,  # MB_ICONERROR | MB_SYSTEMMODAL
     )
+
+
+def _launch_bundled(
+    spec: core.bundle.BundledBotSpec,
+    options: collections.abc.Mapping[str, object],
+    verbose: bool,
+) -> None:
+    """Run the bundled bot `spec` against the located client until it ends."""
+    try:
+        pid = core.api.Client.locate_all()[0].pid
+    except RuntimeError as exception:
+        _logger.error("can't start:\n  - %s", core.output.capitalize(str(exception)))
+        return
+
+    with core.output.verbose(verbose):
+        outcome = core.bundle.run(spec, options, pid)
+        _logger.debug("bot %s ended: %s", spec.bot_id, outcome.exit_code.name.lower())
+
+    match outcome.exit_code:
+        case core.worker.ExitCode.ABORTED:
+            _logger.info(core.api.ABORT_MESSAGE)
+        case core.worker.ExitCode.CRASHED:
+            _error_dialog(outcome.error or f"bot {spec.bot_id} crashed")
 
 
 def _dispatch(args: collections.abc.Sequence[str]) -> None:
@@ -225,6 +290,50 @@ def _generate_preset_command(line: str):
     def command() -> None:
         _dispatch(shlex.split(line))
 
+    return command
+
+
+def _generate_bundled_run_command(spec: core.bundle.BundledBotSpec):
+    """Build a typer command exposing the options of bundled bot `spec` as CLI options.
+
+    If the bot takes options the catalog doesn't declare, they are passed on as typed.
+    """
+    params = [
+        inspect.Parameter(
+            "ctx", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=typer.Context
+        )
+    ]
+    for option in spec.options:
+        declarations = (
+            (f"--{option.name.replace('_', '-')}",) if option.type is bool else ()
+        )  # Suppress --no-(option) stubs
+        params.append(
+            inspect.Parameter(
+                option.name,
+                inspect.Parameter.KEYWORD_ONLY,
+                default=typer.Option(
+                    ... if option.required else option.default,
+                    *declarations,
+                    help=option.help,
+                    hidden=option.hidden,
+                    min=option.min,
+                    max=option.max,
+                ),
+                annotation=option.type
+                if option.required or option.default is not None
+                else option.type | None,
+            )
+        )
+
+    def command(ctx: typer.Context, **kwargs) -> None:
+        options = dict(kwargs)
+
+        if spec.extra:
+            options["extra"] = list(ctx.args)
+
+        _launch_bundled(spec, options, ctx.obj)
+
+    command.__signature__ = inspect.Signature(params)
     return command
 
 

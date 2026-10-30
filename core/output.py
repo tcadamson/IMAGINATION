@@ -1,8 +1,9 @@
 """Console and log file output for IMAGINATION.
 
 What a command was run to show is printed; everything else is logged. The console shows
-INFO and up, a warning or an error with its level in front. The log file keeps every
-level, rotating, so a user's report can include what the bots saw and did.
+INFO and up, and DEBUG too with run --verbose; a debug line, a warning, or an error has its
+level in front. The log file keeps every level, rotating, so a user's report can include
+what the bots saw and did.
 
 The wording, the same everywhere, the bots' lines and the help texts included:
 - Capitals only where a line or a bullet starts, and on names. After a colon, lower case
@@ -19,6 +20,8 @@ Typer's own messages keep their words, but start in lower case after "Error:" an
 their full stop, as the console shows them (main._show_usage_error).
 """
 
+import collections.abc
+import contextlib
 import io
 import logging
 import logging.handlers
@@ -35,6 +38,11 @@ _LOG_BACKUPS: typing.Final = 3
 _console: logging.Handler | None = None
 
 
+def capitalize(text: str) -> str:
+    """Return `text` with its first character in upper case, the rest unchanged."""
+    return text[:1].upper() + text[1:]
+
+
 def count(n: int, word: str, plural: str | None = None) -> str:
     """Return `n` with thousands separators and its `word`, singular for 1.
 
@@ -49,7 +57,7 @@ class _ConsoleFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         text = super().format(record)
 
-        if record.levelno < logging.WARNING:
+        if record.levelno == logging.INFO:
             return text
 
         return f"{record.levelname.capitalize()}: {text}"
@@ -85,3 +93,19 @@ def setup() -> None:
     root.setLevel(logging.DEBUG)
     root.addHandler(_console)
     root.addHandler(log_file)
+
+
+@contextlib.contextmanager
+def verbose(enabled: bool = True) -> collections.abc.Iterator[None]:
+    """Show DEBUG records on the console within the context, if `enabled`."""
+    if _console is None or not enabled:
+        yield
+        return
+
+    level = _console.level
+    _console.setLevel(logging.DEBUG)
+
+    try:
+        yield
+    finally:
+        _console.setLevel(level)

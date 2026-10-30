@@ -26,6 +26,11 @@ _user32.GetWindowTextW.argtypes = [
     ctypes.wintypes.LPWSTR,
     ctypes.c_int,
 ]
+_user32.GetWindowThreadProcessId.argtypes = [
+    ctypes.wintypes.HWND,
+    ctypes.POINTER(ctypes.wintypes.DWORD),
+]
+_user32.GetWindowThreadProcessId.restype = ctypes.wintypes.DWORD
 
 ABORT_MESSAGE: typing.Final = "Aborted by user"
 
@@ -85,3 +90,13 @@ class Client:
     def handle(self) -> int:
         """Client window handle."""
         return self._handle
+
+    @property
+    def pid(self) -> int:
+        """ID of the client's process."""
+        pid = ctypes.wintypes.DWORD()
+
+        if not _user32.GetWindowThreadProcessId(self._handle, ctypes.byref(pid)):
+            raise RuntimeError("the IMAGINE client window has closed")
+
+        return pid.value
