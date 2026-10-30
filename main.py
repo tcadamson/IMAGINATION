@@ -4,6 +4,7 @@ import collections.abc
 import ctypes
 import logging
 import shlex
+import sys
 import traceback
 import typing
 
@@ -17,6 +18,7 @@ import core.output
 import core.paths
 import core.presets
 import core.registry
+import core.worker
 
 _BANNER: typing.Final = rf"""
 
@@ -238,6 +240,9 @@ def _guard(callback: collections.abc.Callable[[], None]) -> None:
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == [core.worker.FLAG]:
+        sys.exit(core.worker.main(sys.argv[2:]))
+
     core.output.setup()
     _cli.add_typer(_cli_presets, name="presets")
     _cli.add_typer(_cli_run, name="run")
