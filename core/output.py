@@ -3,6 +3,20 @@
 What a command was run to show is printed; everything else is logged. The console shows
 INFO and up, a warning or an error with its level in front. The log file keeps every
 level, rotating, so a user's report can include what the bots saw and did.
+
+The wording, the same everywhere, the bots' lines and the help texts included:
+- Capitals only where a line or a bullet starts, and on names. After a colon, lower case
+  unless a name follows, "Debug:", "Warning:", and "Error:" included: the console puts
+  the level in front of the message as it is, so debug lines, exception messages and
+  logged problems start in lower case. No full stop at a line's end; one between two sentences.
+- A colon after a label or between a statement and its reason, a semicolon before what
+  to do: "what: why; what to do". The Oxford comma in a list of three or more: "A, B,
+  and C". A refusal to start is "Can't start:" with a line for
+  each reason.
+- Thousands separators on every count, and `count` for its word.
+- No Python reprs in a line meant for the user.
+Typer's own messages keep their words, but start in lower case after "Error:" and lose
+their full stop, as the console shows them (main._show_usage_error).
 """
 
 import io
@@ -21,13 +35,16 @@ _LOG_BACKUPS: typing.Final = 3
 _console: logging.Handler | None = None
 
 
-def capitalize(text: str) -> str:
-    """Return `text` with its first character in upper case, the rest unchanged."""
-    return text[:1].upper() + text[1:]
+def count(n: int, word: str, plural: str | None = None) -> str:
+    """Return `n` with thousands separators and its `word`, singular for 1.
+
+    count(3, "preset") is "3 presets".
+    """
+    return f"{n:,} {word if n == 1 else plural or word + 's'}"
 
 
 class _ConsoleFormatter(logging.Formatter):
-    """The message alone; a warning or an error gets its level in front, and a capital."""
+    """The message alone; a debug line, a warning, or an error gets its level in front."""
 
     def format(self, record: logging.LogRecord) -> str:
         text = super().format(record)
@@ -35,7 +52,7 @@ class _ConsoleFormatter(logging.Formatter):
         if record.levelno < logging.WARNING:
             return text
 
-        return f"{record.levelname.capitalize()}: {capitalize(text)}"
+        return f"{record.levelname.capitalize()}: {text}"
 
 
 def setup() -> None:

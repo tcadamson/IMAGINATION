@@ -20,14 +20,14 @@ def load_presets() -> dict[str, str]:
         except FileNotFoundError:
             continue
         except json.JSONDecodeError as exception:
-            raise RuntimeError(f"Malformed JSON at {path}") from exception
+            raise RuntimeError(f"malformed JSON at {path}") from exception
 
         if not isinstance(data, dict):
-            raise RuntimeError(f"Expected object at {path}")
+            raise RuntimeError(f"expected an object at {path}")
 
         for preset_id, preset in data.items():
             if not isinstance(preset, str):
-                raise RuntimeError(f"Invalid preset {preset_id!r} at {path}")
+                raise RuntimeError(f"invalid preset {preset_id} at {path}")
         presets |= data
     return presets
 

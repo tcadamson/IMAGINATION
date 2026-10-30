@@ -8,6 +8,8 @@ import traceback
 import typing
 
 import typer
+import typer._click.decorators
+import typer._click.exceptions
 import typer.core
 
 import core.output
@@ -21,8 +23,8 @@ _BANNER: typing.Final = r"""
 6666666666666666666666666
 666666   666666   6666666   IMAGINATION
 666666   666666   6666666
-666666   666666   6666666   Automation framework for the SMT: IMAGINE client.
-6666666666666666666666666   Bots for rebirth, demon force, and more.
+666666   666666   6666666   Automation framework for the SMT: IMAGINE client
+6666666666666666666666666   Bots for rebirth, demon force, and more
 666   66        66   6666
 666    6        6    6666   Version: v2.0.0-beta.5
 6666                66666   Repo: https://github.com/tcadamson/IMAGINATION
@@ -66,25 +68,24 @@ _logger: logging.Logger = logging.getLogger(__name__)
 
 @_cli_run.callback()
 def _cli_run_callback() -> None:
-    """Run one of the installed bots."""
+    """Run one of the installed bots"""
 
 
 @_cli_presets.callback()
 def _cli_presets_callback() -> None:
-    """Manage command presets.
+    """Manage command presets
 
-    To edit existing presets and/or add your own, edit presets.json at
-    %LOCALAPPDATA%\\IMAGINATION\\resources
+    Add/edit them at %LOCALAPPDATA%\\IMAGINATION\\resources\\presets.json (Win+R)
     """
 
 
 @_cli_presets.command(name="list")
 def _cli_presets_list() -> None:
-    """List available presets."""
+    """List available presets"""
     presets = core.presets.load_presets()
 
     if not presets:
-        print(f"No presets defined in {core.presets.PRESETS_PATH}")
+        print(f"No presets; add/edit them at {core.presets.PRESETS_PATH} (Win+R)")
         return
 
     for preset_id, line in presets.items():
@@ -93,7 +94,7 @@ def _cli_presets_list() -> None:
 
 @_cli_presets.command(name="load")
 def _cli_presets_load() -> None:
-    """Load any presets on disk and register them as commands."""
+    """Load any presets on disk and register them as commands"""
     presets = core.presets.load_presets()
 
     # Drop previously registered presets to reflect recent edits
@@ -109,7 +110,7 @@ def _cli_presets_load() -> None:
         preset_id = preset_id.lower()
 
         if preset_id in reserved:
-            print(f"Skipping preset with reserved name: {preset_id}")
+            _logger.warning("skipping preset %s: a command has that name", preset_id)
             continue
 
         _cli.command(name=preset_id, help=line, hidden=True)(
@@ -121,21 +122,21 @@ def _cli_presets_load() -> None:
     global _group
     _group = typer.main.get_group(_cli)
 
-    _logger.info(f"Loaded {len(_preset_names)} preset(s)")
+    _logger.info("Loaded %s", core.output.count(len(_preset_names), "preset"))
 
 
 @_cli.callback(help=None)
 def _cli_callback() -> None:
-    """IMAGINATION interactive console."""
+    """IMAGINATION interactive console"""
 
 
 @_cli.command()
 def update() -> None:
-    """Apply available updates to installed bots, and install any new bots.
+    """Apply available updates to installed bots, and install any new bots
 
-    Automatically runs once on program launch.
+    Automatically runs once on launch
     """
-    print("Checking for updates...")
+    _logger.info("Checking for updates...")
 
     if not core.paths.USER_DIRECTORY_OVERRIDE_PASSED:
         core.paths.migrate()
@@ -144,10 +145,10 @@ def update() -> None:
         try:
             core.registry.sync()
         except Exception as exception:  # Update attempt is best-effort
-            _logger.exception("Update failed:")
+            _logger.exception("update failed; carrying on with the installed bots")
             _error_dialog(exception)
 
-    print("Done.")
+    _logger.info("Done")
 
     global _group
     _group = typer.main.get_group(_cli)
@@ -165,7 +166,54 @@ def _error_dialog(exception: BaseException) -> None:
 
 def _dispatch(args: collections.abc.Sequence[str]) -> None:
     """Dispatch console `args` through the active command group."""
-    typing.cast(typer.core.TyperGroup, _group).main(args=args, prog_name="")
+    try:
+        typing.cast(typer.core.TyperGroup, _group).main(
+            args=args, prog_name="", standalone_mode=False
+        )
+    except typer._click.exceptions.NoArgsIsHelpError as error:
+        print(error.format_message())  # The help, as Typer would show it
+    except typer._click.exceptions.ClickException as error:
+        _show_usage_error(error)
+
+
+def _show_usage_error(error: typer._click.exceptions.ClickException) -> None:
+    """Show Typer's `error` as Typer would, but in the console's wording: the message in
+    lower case after "Error:" and without its full stop, logged."""
+    ctx = getattr(error, "ctx", None)
+
+    if ctx is not None:
+        command = " ".join((*ctx.command_path.split(), ctx.help_option_names[0]))
+        print(f"{ctx.get_usage()}\nTry '{command}' for help\n")
+
+    if isinstance(error, typer._click.exceptions.NoSuchOption) and error.possibilities:
+        message = (  # Typer's own shows its possibilities as a tuple
+            f"{error.message} (possible options: "
+            f"{', '.join(sorted(error.possibilities))})"
+        )
+    else:
+        message = error.format_message().removesuffix(".")
+
+    _logger.error("%s", message[:1].lower() + message[1:])
+
+
+_click_help_option: typing.Final = typer._click.decorators.help_option
+
+
+def _help_option(param_decls: list[str]):
+    """Typer's --help option, its help without the full stop."""
+    add_help_option = _click_help_option(param_decls)
+
+    def decorator(command):
+        add_help_option(command)
+        command.params[-1].help = "Show this message and exit"
+        return command
+
+    return decorator
+
+
+typer._click.decorators.help_option = (
+    _help_option  # Every command's help option comes from here, as it is first shown
+)
 
 
 def _generate_preset_command(line: str):
@@ -184,7 +232,7 @@ def _guard(callback: collections.abc.Callable[[], None]) -> None:
     except SystemExit:  # Raised by typer internals
         pass
     except Exception as exception:
-        _logger.exception("Fatal exception:")
+        _logger.exception("fatal exception")
         _error_dialog(exception)
 
 

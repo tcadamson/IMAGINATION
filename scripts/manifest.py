@@ -11,6 +11,7 @@ import json
 import typing
 
 import core.api
+import core.output
 
 _MANIFEST_PATH: typing.Final = core.api.ROOT_DIRECTORY / "resources" / "manifest.json"
 
@@ -27,4 +28,4 @@ if __name__ == "__main__":
     with _MANIFEST_PATH.open("w", encoding="utf-8", newline="\n") as fp:
         json.dump(manifest, fp, indent=4, sort_keys=True)
         fp.write("\n")
-    print(f"Wrote {_MANIFEST_PATH.name}: {len(manifest)} files")
+    print(f"Wrote {_MANIFEST_PATH.name}: {core.output.count(len(manifest), 'file')}")

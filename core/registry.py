@@ -47,7 +47,7 @@ def _destination(relative_path: str) -> pathlib.Path:
     path = pathlib.PurePosixPath(relative_path)
 
     if path.is_absolute() or ".." in path.parts:
-        raise ValueError(f"Unsafe path in manifest.json: {relative_path!r}")
+        raise ValueError(f"unsafe path in manifest.json: {relative_path}")
 
     return core.paths.USER_DIRECTORY / path
 
@@ -93,8 +93,9 @@ def sync(archive: dict[str, bytes] | None = None) -> None:
 
         if sha256_actual != sha256_expected:
             raise RuntimeError(
-                f"Checksum mismatch for {relative_path!r}: {sha256_actual} != {sha256_expected}"
+                f"checksum mismatch for {relative_path}: {sha256_actual}, "
+                f"expected {sha256_expected}"
             )
 
         _atomic_write(destination, data)
-        _logger.info("Installed: %s", relative_path)
+        _logger.info("Installed %s", relative_path)

@@ -27,7 +27,7 @@ _user32.GetWindowTextW.argtypes = [
     ctypes.c_int,
 ]
 
-ABORT_MESSAGE: typing.Final = "Aborted by user."
+ABORT_MESSAGE: typing.Final = "Aborted by user"
 
 
 def safe_abort() -> None:
@@ -77,7 +77,7 @@ class Client:
         _user32.EnumWindows(collect, 0)
 
         if not handles:
-            raise RuntimeError("No IMAGINE client window(s) available.")
+            raise RuntimeError("no IMAGINE client window is open")
 
         return tuple(cls(handle) for handle in handles)
 
