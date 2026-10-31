@@ -1,5 +1,5 @@
 {
-  "bundle": "a8d9953894c96cca4a4d0a6a4e57e9d7a4a3d258c19455d98a1963d858eeadf3",
+  "bundle": "10db80d05a488cbe04490ac5b8730615f799c45658aee2e81d0ca889fbf54c39",
   "bots": {
     "rebirth": {
       "help": "Rebirth partner to the specified ranks\n\nStart in the cathedral and the bot will move you to the correct location. With --mitama, a mitama fusion will be performed and --mitama-ranks becomes required. After any stop, the same command will continue where you left off\n\n--check will validate your run without running",
