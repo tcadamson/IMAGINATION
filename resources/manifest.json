@@ -1,8 +1,8 @@
 {
-    "resources/bots.json": "a12136e61ae5361ecf42f3447b8d3fd27f5e6419891cdc864dcd80af9fe2dbb1",
-    "resources/bundles/4cc6576cc21dd01049c0556e1ccdabfc6a34ef9e2b21eb123d0c5001b2f6b176.pyd": {
+    "resources/bots.json": "cf9ace6def7471448c3230815b368cf8e5cafc0cea8a966fa9cde6c4a60e3d34",
+    "resources/bundles/881acf3422f14e6b27b659fd5f963de50d400a7d0bedb01d581940caa12347ee.pyd": {
         "requires": "2.0.0rc1",
-        "sha256": "4cc6576cc21dd01049c0556e1ccdabfc6a34ef9e2b21eb123d0c5001b2f6b176",
+        "sha256": "881acf3422f14e6b27b659fd5f963de50d400a7d0bedb01d581940caa12347ee",
         "url": "https://github.com/tcadamson/IMAGINATION/releases/download/v2.0.0-rc.1/bundle.cp314-win_amd64.pyd"
     },
     "resources/presets.default.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"

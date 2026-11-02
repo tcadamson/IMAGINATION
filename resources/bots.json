@@ -1,8 +1,8 @@
 {
-  "bundle": "4cc6576cc21dd01049c0556e1ccdabfc6a34ef9e2b21eb123d0c5001b2f6b176",
+  "bundle": "881acf3422f14e6b27b659fd5f963de50d400a7d0bedb01d581940caa12347ee",
   "bots": {
     "rebirth": {
-      "help": "Rebirth partner to the specified ranks\n\nStart in the cathedral and the bot will move you to the correct location. With --mitama, a mitama fusion will be performed and --mitama-ranks becomes required. After any stop, the same command will continue where you left off\n\n--check will validate your run without running",
+      "help": "Rebirth partner to the specified ranks\n\nStart in the cathedral and the bot will move you to the correct location. With --mitama, a mitama fusion will be performed and --mitama-ranks becomes required. After any stop, the same command will continue where you left off\n\nWhichever XP incense was used prior to starting, the bot will renew before its effect expires, if it is present in the inventory (except x2,010). If digitalized, the bot will pause and prompt you to reset before digitalization expires\n\n--check will validate your run without running",
       "options": {
         "ranks": {
           "type": "str",
@@ -35,7 +35,7 @@
       }
     },
     "tmg": {
-      "help": "Farm hazel branches without wanting to mudo yourself\n\nStart in the TMG lobby and the bot will move and interact as necessary, leaving only the Lucifuge fight to be done manually\n\nThe bot automatically loots from the box: Magnetite, MAG Presser α, Hazel Branches, Hazel Wand, DCM: Lucifuge, DS: Lucifuge",
+      "help": "Farm hazel branches without wanting to mudo yourself\n\nStart in the TMG lobby and the bot will move and interact as necessary, leaving only the Lucifuge fight to be done manually\n\nThe bot automatically loots from the box: Magnetite, MAG Presser α, Hazel Branches, and anything that trades for branches (Hazel Wand, DCM: Lucifuge, Demon Soul: Lucifuge), and will skip the golden light unless you elect to collect from it",
       "options": {
         "cycles": {
           "type": "int",
@@ -47,129 +47,134 @@
           "type": "bool",
           "default": false,
           "help": "Go straight to the roof, keeping the ghosts (two MAG Presser α per cycle)"
+        },
+        "collect_apples": {
+          "type": "bool",
+          "default": false,
+          "help": "Collect apples from the golden light; otherwise, the bot ignores it"
         }
       }
     },
     "demon_force": {
-      "help": "Roll demon force items on partner\n\nNormally, the bot will wait for you to accept or discard a roll before continuing. Including any of the aliases below will put the bot in whitelist mode and discard any roll or category of roll not included in the set of aliases passed\n\nMatch any other effect by its name, using hyphens for spaces, and the lowest value kept (0 for any), e.g. --spread-resist 30\n\nItem priority: green sands > red sands > blue sands > scabbards > loops",
+      "help": "Roll demon force items on partner\n\nNormally, the bot will wait for you to accept or discard a roll before continuing. Including any of the aliases below will put the bot in whitelist mode and discard any roll or category of roll not included in the set of aliases passed\n\nFor a desired effect that doesn't already have an alias: match it by name, using hyphens for spaces, and the lowest value kept (0 for any), e.g. --spread-resist 30\n\nItem priority: green sands > red sands > blue sands > scabbards > loops",
       "options": {
         "rolls": {
           "type": "int",
           "default": null,
           "min": 1,
-          "help": "How many rolls to make; without it, until the items run out"
+          "help": "How many rolls to make; otherwise, until the items run out"
         },
         "attack": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of Attack Damage at N or more; 0 for any"
+          "help": "Keep rolls of Attack % at N or more; 0 for any"
         },
         "rapid": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of Rapid Damage at N or more; 0 for any"
+          "help": "Keep rolls of Rapid % at N or more; 0 for any"
         },
         "rush": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of Rush Damage at N or more; 0 for any"
+          "help": "Keep rolls of Rush % at N or more; 0 for any"
         },
         "shot": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of Shot Damage at N or more; 0 for any"
+          "help": "Keep rolls of Shot % at N or more; 0 for any"
         },
         "spin": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of Spin Damage at N or more; 0 for any"
+          "help": "Keep rolls of Spin % at N or more; 0 for any"
         },
         "lbp": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of Limit Break Power at N or more; 0 for any"
+          "help": "Keep rolls of Limit Break Power % at N or more; 0 for any"
         },
         "lbc": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of Limit Break Chance at N or more; 0 for any"
+          "help": "Keep rolls of Limit Break Chance % at N or more; 0 for any"
         },
         "fcc": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 50,
-          "help": "Keep rolls of Final Crit at N or more; 0 for any"
+          "help": "Keep rolls of Final Crit % at N or more; 0 for any"
         },
         "tac": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of TA Chance at N or more; 0 for any"
+          "help": "Keep rolls of TA Chance % at N or more; 0 for any"
         },
         "tap": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of TA Power at N or more; 0 for any"
+          "help": "Keep rolls of TA Power % at N or more; 0 for any"
         },
         "puc": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of Pursuit Chance at N or more; 0 for any"
+          "help": "Keep rolls of Pursuit Chance % at N or more; 0 for any"
         },
         "pup": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of Pursuit Power at N or more; 0 for any"
+          "help": "Keep rolls of Pursuit Power % at N or more; 0 for any"
         },
         "null_magic": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of Null All Magic at N or more; 0 for any"
+          "help": "Keep rolls of Null All Magic % at N or more; 0 for any"
         },
         "reflect_magic": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of Reflect All Magic at N or more; 0 for any"
+          "help": "Keep rolls of Reflect All Magic % at N or more; 0 for any"
         },
         "null_phys": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of Null All Physical at N or more; 0 for any"
+          "help": "Keep rolls of Null All Physical % at N or more; 0 for any"
         },
         "reflect_phys": {
           "type": "int",
           "default": null,
           "min": 0,
           "max": 100,
-          "help": "Keep rolls of Reflect All Physical at N or more; 0 for any"
+          "help": "Keep rolls of Reflect All Physical % at N or more; 0 for any"
         },
         "all_stat": {
           "type": "int",
@@ -196,7 +201,7 @@
       }
     },
     "mitama_reroll": {
-      "help": "Allocate and remove mitama until the specified path reaches a stat target\n\nStart in the cathedral and the bot will move you to the correct location. Allocates mitama according to the specified mix, repeating until either the total stat bonus for that path reaches the target, or the target is determined to be out of reach. If out of reach, it removes the mitama and tries again",
+      "help": "Allocate and remove mitama until the specified path reaches up to two stat targets\n\nStart in the cathedral and the bot will move you to the correct location. Allocates mitama according to the specified mix, repeating until either the total stat bonus for that path reaches the target(s), or the target(s) are determined to be out of reach. If out of reach, it removes the mitama and tries again",
       "options": {
         "path": {
           "type": "int",
@@ -207,18 +212,23 @@
         "mix": {
           "type": "str",
           "default": null,
-          "help": "The mitama to fill it with, as a plan word (e.g. K4S4); without it, what the path holds"
+          "help": "The mitama to fill it with, as a plan word (e.g. K4S4); otherwise, what the path holds"
         },
         "attempts": {
           "type": "int",
           "default": null,
           "min": 1,
-          "help": "How many attempts; without it, until the mitama or the macca run out"
+          "help": "How many attempts; otherwise, until the mitama or the macca run out"
         },
         "check": {
           "type": "bool",
           "default": false,
           "help": "Show what the run would do, what it costs, its odds, and what would stop it"
+        },
+        "either": {
+          "type": "bool",
+          "default": false,
+          "help": "With two stats, reaching either one is enough; otherwise, both at once"
         },
         "strength": {
           "type": "int",
