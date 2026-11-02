@@ -44,20 +44,19 @@ _CONTEXT_SETTINGS: typing.Final[collections.abc.Mapping[str, typing.Any]] = {
 }
 
 
-class _UsageLineOverride(typer.core.TyperGroup):
-    """Custom --help formatting to omit the leading empty program name."""
+class _RootGroup(typer.core.TyperGroup):
+    """The root's help and errors without a usage line or an Options section: the
+    usage names no command, and --help is the only option (one added would be hidden)."""
 
     def format_usage(self, ctx, formatter):
-        pieces = self.collect_usage_pieces(ctx)
+        pass
 
-        if ctx.command_path:
-            formatter.write_usage(ctx.command_path, " ".join(pieces))
-        else:
-            formatter.write_usage("", " ".join(pieces), prefix="Usage:")
+    def format_options(self, ctx, formatter):
+        self.format_commands(ctx, formatter)
 
 
 _cli = typer.Typer(
-    cls=_UsageLineOverride,
+    cls=_RootGroup,
     context_settings=_CONTEXT_SETTINGS,
     rich_markup_mode=None,
     no_args_is_help=True,
@@ -251,7 +250,8 @@ def _show_usage_error(error: typer._click.exceptions.ClickException) -> None:
 
     if ctx is not None:
         command = " ".join((*ctx.command_path.split(), ctx.help_option_names[0]))
-        print(f"{ctx.get_usage()}\nTry '{command}' for help\n")
+        usage = ctx.get_usage()  # Empty at the root
+        print(f"{usage}\n" if usage else "", f"Try '{command}' for help\n", sep="")
 
     if isinstance(error, typer._click.exceptions.NoSuchOption) and error.possibilities:
         message = (  # Typer's own shows its possibilities as a tuple
