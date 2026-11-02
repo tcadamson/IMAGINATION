@@ -119,6 +119,9 @@ def load_catalog(
 
     Return none if there is no catalog, or, with a warning, if the bundle it names is
     not installed. Raise if the catalog is malformed.
+
+    The bots' options are read only once the bundle is found: a catalog for a newer
+    IMAGINATION, whose bundle a sync skipped, may use options this one can't read.
     """
     try:
         data = json.loads(catalog_path.read_text(encoding="utf-8"))
@@ -129,6 +132,18 @@ def load_catalog(
 
     try:
         bundle_path = _installed_bundle(data["bundle"])
+        bot_ids = list(data["bots"])
+    except (KeyError, TypeError, ValueError) as exception:
+        raise RuntimeError(f"invalid catalog at {catalog_path}") from exception
+
+    if bundle_path is None:
+        _logger.warning(
+            "%s not available: the bot bundle is not installed",
+            ", ".join(bot_ids),
+        )
+        return {}
+
+    try:
         bots = {
             bot_id: (
                 bot["help"],
@@ -142,13 +157,6 @@ def load_catalog(
         }
     except (KeyError, TypeError, ValueError) as exception:
         raise RuntimeError(f"invalid catalog at {catalog_path}") from exception
-
-    if bundle_path is None:
-        _logger.warning(
-            "%s not available: the bot bundle is not installed",
-            ", ".join(bots),
-        )
-        return {}
 
     return {
         bot_id: BundledBotSpec(bot_id, bot_help, options, extra, bundle_path)
