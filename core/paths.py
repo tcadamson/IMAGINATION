@@ -20,6 +20,9 @@ USER_DIRECTORY: typing.Final = (
     else platformdirs.user_data_path("IMAGINATION", appauthor=False, ensure_exists=True)
 )
 BUNDLE_DIRECTORY: typing.Final = USER_DIRECTORY / "resources" / "bundles"
+UPDATE_DIRECTORY: typing.Final = (
+    USER_DIRECTORY / "update"
+)  # A new program, unpacked, while it installs itself
 
 _logger: logging.Logger = logging.getLogger(__name__)
 

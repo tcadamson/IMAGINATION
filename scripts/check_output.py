@@ -7,15 +7,18 @@ or from `--catalog PATH` (the bot repository's dist/bots.json).
 Every line comes from the real code: main's commands and startup, core's output as
 core.output sets it up, and a worker in its own process for each run. Stand-ins: the bot
 bundle (a stub that acts out each way a run ends, chosen by the client's process ID), the
-client window, the update branch, and the error dialog, shown as a "[dialog]" line. Files
-go to a temporary directory, shown as %LOCALAPPDATA%\\IMAGINATION; the program's own
-directory is shown as <program>.
+client window, the update branch, the error dialog, shown as a "[dialog]" line, and for
+the program's own update the built program and the processes it starts, shown as
+"[started ...]" lines. Files go to a temporary directory, shown as
+%LOCALAPPDATA%\\IMAGINATION; the program's own directory, or the built program's
+stand-in, is shown as <program>.
 
 Run it after changing a message, and compare its output before and after a change that
 should leave the output alone.
 """
 
 import argparse
+import builtins
 import contextlib
 import ctypes
 import hashlib
@@ -32,8 +35,11 @@ import types
 import typing
 import urllib.error
 import urllib.parse
+import zipfile
 
 _REPOSITORY: typing.Final = pathlib.Path(__file__).resolve().parents[1]
+
+_OLD_VERSION: typing.Final = "1.0.0"  # The program updated from: any older version
 
 # The stub bundle's way to end, by the client's process ID
 _FINISHED, _STOPPED, _CRASHED, _ABORTED, _EXIT_CODE, _NATIVE = range(1, 7)
@@ -77,6 +83,7 @@ _OTHER_API_BUNDLE: typing.Final = (
 _BROKEN_BUNDLE: typing.Final = 'raise ImportError("(a bundle that fails to load)")\n'
 
 _main: types.ModuleType
+_program_directory: pathlib.Path
 _catalog: dict[str, typing.Any]
 _scenarios: dict[str, typing.Callable[[], None]] = {}
 
@@ -202,9 +209,14 @@ def _client(pid: int | None):
 
 
 @contextlib.contextmanager
-def _updates(manifest: dict[str, object], downloads: dict[str, bytes] | None = None):
-    """Updates from a branch holding `manifest` and the user's resources, as on a start
-    without IMAGINATION_USER_DIRECTORY; `downloads` by URL, or None for no network."""
+def _updates(
+    manifest: dict[str, object],
+    downloads: dict[str, bytes] | None = None,
+    release: dict[str, str] | None = None,
+):
+    """Updates from a branch holding `manifest`, the user's resources, and `release` as
+    its release.json, as on a start without IMAGINATION_USER_DIRECTORY; `downloads` by
+    URL, or None for no network."""
     registry, paths = _main.core.registry, _main.core.paths
     request_archive, request = registry.request_archive, registry.request
     override = paths.USER_DIRECTORY_OVERRIDE_PASSED
@@ -217,7 +229,11 @@ def _updates(manifest: dict[str, object], downloads: dict[str, bytes] | None = N
             "resources/manifest.json": json.dumps(manifest).encode("utf-8"),
             "resources/bots.json": (_user_directory() / "stub-bots.json").read_bytes(),
             "resources/presets.default.json": b"{}\n",
-        }
+        } | (
+            {"resources/release.json": json.dumps(release).encode("utf-8")}
+            if release is not None
+            else {}
+        )
 
     def download(url: str, timeout: float = 30.0) -> bytes:
         if urllib.parse.urlsplit(url).scheme != "https":
@@ -248,6 +264,107 @@ def _branch(url: str = "https://github.com/tcadamson/IMAGINATION/releases/x.pyd"
         "resources/presets.default.json": hashlib.sha256(b"{}\n").hexdigest(),
     }
     return manifest, {url: bundle}
+
+
+class _Exited(BaseException):
+    """The program's exit, os._exit's stand-in: past _guard and `except Exception`."""
+
+
+@contextlib.contextmanager
+def _built(
+    directory: pathlib.Path, console_processes: int = 1, version: str | None = None
+):
+    """The built program, in `directory`, in a console with `console_processes`
+    processes, of `version` if not this one's; the processes it starts shown as
+    "[started ...]" lines, its exit as "[exited]"."""
+    api, program = _main.core.api, _main.core.program
+    kernel32 = program._kernel32
+    saved = (
+        _main.core.VERSION,
+        getattr(sys, "frozen", False),
+        sys.executable,
+        api.ROOT_DIRECTORY,
+        program.subprocess.Popen,
+        os._exit,
+        _main.logging.shutdown,
+        kernel32.GetConsoleProcessList,
+    )
+
+    def popen(args: list[str], **_) -> None:
+        shown = [*args]
+
+        if program.INSTALL_FLAG in shown:  # This process's ID, different on each run
+            shown[shown.index(program.INSTALL_FLAG) + 2] = "<pid>"
+
+        print(f"[started {' '.join(shown)}]")
+
+    def exit_(code: int) -> typing.NoReturn:
+        print("[exited]")
+        raise _Exited
+
+    _main.core.VERSION = version or _main.core.VERSION
+    sys.frozen = True
+    sys.executable = str(directory / "IMAGINATION.exe")
+    api.ROOT_DIRECTORY = directory
+    program.subprocess.Popen = popen
+    os._exit = exit_
+    _main.logging.shutdown = lambda: None
+    kernel32.GetConsoleProcessList = lambda processes, count: console_processes
+
+    try:
+        yield
+    finally:
+        (
+            _main.core.VERSION,
+            sys.frozen,
+            sys.executable,
+            api.ROOT_DIRECTORY,
+            program.subprocess.Popen,
+            os._exit,
+            _main.logging.shutdown,
+            kernel32.GetConsoleProcessList,
+        ) = saved
+
+
+def _launch(*args: str) -> None:
+    """Launch IMAGINATION's update as main.py does, with `args` on its command line."""
+    argv = sys.argv
+    sys.argv = ["IMAGINATION.exe", *args]
+
+    try:
+        _main._guard(lambda: _main._update(on_launch=True))
+    except _Exited:
+        pass
+    finally:
+        sys.argv = argv
+
+
+def _old_program() -> None:
+    """Put the old program's files in the stand-in program directory."""
+    shutil.rmtree(_program_directory, ignore_errors=True)
+    for relative_path in ("IMAGINATION.exe", "LICENSE", "lib/library.zip"):
+        path = _program_directory / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("(old)")
+
+
+def _new_program() -> tuple[str, bytes, dict[str, str]]:
+    """The new program's zip as a release holds it: its URL, its bytes, and the
+    release.json naming it. The new program is this one, the old one `_OLD_VERSION`."""
+    url = (
+        "https://github.com/tcadamson/IMAGINATION/releases/download/"
+        f"{_main.core.version_text()}/IMAGINATION.zip"
+    )
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, "w") as zip_file:
+        for relative_path in ("IMAGINATION.exe", "LICENSE", "lib/library.zip"):
+            zip_file.writestr(f"IMAGINATION/{relative_path}", "(new)")
+    release = {
+        "version": _main.core.VERSION,
+        "url": url,
+        "sha256": hashlib.sha256(data.getvalue()).hexdigest(),
+    }
+    return url, data.getvalue(), release
 
 
 def _bot_without_options() -> str:
@@ -328,6 +445,72 @@ def _update_refusals() -> None:
     with _updates(manifest, downloads):
         _main._guard(_main.update)
     print()
+
+
+@_scenario
+def _update_program() -> None:
+    """The program's own update, from launch to the new program's: from Explorer, from a
+    shell, typed (yes, no), a checksum, a folder that can't be written to, a file of the
+    old program in use."""
+    url, data, release = _new_program()
+    staged = _user_directory() / "update" / "IMAGINATION"
+
+    for name, change, console_processes, answer, locked in (
+        ("from Explorer", {}, 1, None, False),
+        ("from a shell", {}, 2, None, False),
+        ("typed, yes", {}, 1, "y", False),
+        ("typed, no", {}, 1, "", False),
+        ("checksum", {"sha256": "0" * 64}, 1, None, False),
+        ("folder can't be written to", {}, 1, None, False),
+        ("a file of the old program in use", {}, 1, None, True),
+    ):
+        _fresh()
+        _old_program()
+        (
+            _user_directory() / "resources" / "bots.json"
+        ).unlink()  # For an update to show
+        manifest, downloads = _branch()
+        writable, typed = _main.core.program._writable, builtins.input
+
+        if name == "folder can't be written to":
+            _main.core.program._writable = lambda directory: False
+
+        def input_(prompt: str = "") -> str:
+            print(f"{prompt}{answer}")
+            return typing.cast(str, answer)
+
+        print(f"({name})")
+        try:
+            with _updates(manifest, downloads | {url: data}, release | change):
+                with _built(_program_directory, console_processes, _OLD_VERSION):
+                    if answer is None:
+                        _launch()
+                    else:
+                        builtins.input = input_
+                        try:
+                            _type("update")
+                        except _Exited:
+                            pass
+
+                if console_processes == 1 and staged.is_dir():  # The installer
+                    with (
+                        _built(staged),
+                        open(_program_directory / "LICENSE")
+                        if locked
+                        else contextlib.nullcontext(),
+                    ):
+                        _main._guard(
+                            lambda: _main._install_update(
+                                [str(_program_directory), "0", _OLD_VERSION]
+                            )
+                        )
+
+                    with _built(_program_directory):
+                        _launch(_main.core.program.UPDATED_FLAG)
+        finally:
+            _main.core.program._writable, builtins.input = writable, typed
+
+        print()
 
 
 @_scenario
@@ -439,7 +622,7 @@ def _presets() -> None:
 
 
 def main() -> None:
-    global _main, _catalog
+    global _main, _catalog, _program_directory
 
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument("names", nargs="*")
@@ -462,6 +645,7 @@ def main() -> None:
     _catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
 
     user_directory = pathlib.Path(tempfile.mkdtemp(prefix="imagination-output-"))
+    _program_directory = pathlib.Path(tempfile.mkdtemp(prefix="imagination-program-"))
     os.environ["IMAGINATION_USER_DIRECTORY"] = str(user_directory)
     os.environ["COLUMNS"] = "120"  # Help as wide as in a console, not a pipe's 80
     _main = importlib.import_module("main")  # Its paths read the variable as they load
@@ -470,8 +654,13 @@ def main() -> None:
     names = {
         sys.executable: "<python>",
         str(_REPOSITORY): "<program>",
+        str(_program_directory): "<program>",
         str(pathlib.Path(sys.base_prefix)): "<python home>",
         str(user_directory): "%LOCALAPPDATA%\\IMAGINATION",
+    }
+    names |= {  # As an exception's message quotes a path
+        path.replace("\\", "\\\\"): name.replace("\\", "\\\\")
+        for path, name in names.items()
     }
     sys.stdout = _Shown(sys.stdout, names)
     ctypes.windll.user32.MessageBoxW = lambda handle, text, title, flags: print(

@@ -115,10 +115,9 @@ def _supported(relative_path: str, entry: _ManifestEntry) -> bool:
         return True
 
     _logger.warning(
-        "skipping %s: it needs IMAGINATION %s or later; download it from %s",
+        "skipping %s: it needs IMAGINATION %s or later; restart IMAGINATION to update it",
         relative_path,
         core.version_text(requires),
-        RELEASES_URL,
     )
     return False
 

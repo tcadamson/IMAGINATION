@@ -4,7 +4,9 @@ import collections.abc
 import ctypes
 import inspect
 import logging
+import os
 import shlex
+import signal
 import sys
 import traceback
 import typing
@@ -20,6 +22,7 @@ import core.bundle
 import core.output
 import core.paths
 import core.presets
+import core.program
 import core.registry
 import core.worker
 
@@ -147,15 +150,29 @@ def _cli_callback() -> None:
 
 @_cli.command()
 def update() -> None:
-    """Apply available updates to installed bots, and install any new bots
+    """Fetch updates for IMAGINATION and installed bots, and install any new bots
 
     Automatically runs once on launch
     """
+    _update(on_launch=False)
+
+
+def _update(on_launch: bool) -> None:
+    """Apply available updates to the program itself, then to the bots: a new program
+    installs itself and starts, as this one exits. Not on launch, the user is asked first.
+
+    A launch by a new program's installer (core.program.UPDATED_FLAG) continues that
+    update: no program update, and no second "Checking for updates..." line.
+    """
+    continued = on_launch and sys.argv[1:2] == [core.program.UPDATED_FLAG]
     _cli_run.registered_commands = []
-    _logger.info("Checking for updates...")
+
+    if not continued:
+        _logger.info("Checking for updates...")
 
     if not core.paths.USER_DIRECTORY_OVERRIDE_PASSED:
         core.paths.migrate()
+        core.program.clean_up()
         core.presets.ensure_presets()
 
         try:
@@ -164,6 +181,9 @@ def update() -> None:
             _logger.exception("update check failed; continuing")
             _error_dialog(exception)
         else:
+            if not continued:
+                _update_program(archive, ask=not on_launch)
+
             try:
                 core.registry.sync(archive)
             except Exception as exception:
@@ -177,6 +197,50 @@ def update() -> None:
 
     global _group
     _group = typer.main.get_group(_cli)
+
+
+def _update_program(archive: collections.abc.Mapping[str, bytes], ask: bool) -> None:
+    """Start the new program in `archive` to install itself, if there is one, and exit;
+    if `ask`, only once the user agrees to the restart."""
+    try:
+        release = core.program.newer_release(archive)
+
+        if release is None:
+            return
+
+        if ask and not _confirm(
+            f"IMAGINATION {core.version_text(release['version'])} is available; "
+            "restart IMAGINATION now?"
+        ):
+            return
+
+        started = core.program.update(release)
+    except Exception as exception:  # Update attempt is best-effort
+        _logger.exception(
+            "IMAGINATION update failed; continuing with the installed version"
+        )
+        _error_dialog(exception)
+        return
+
+    if started:
+        sys.stdout.flush()
+        logging.shutdown()
+        os._exit(0)  # At once, as the new program waits for this one to close
+
+
+def _install_update(argv: collections.abc.Sequence[str]) -> None:
+    """Install this program over the one that started it, then start the one installed:
+    this program, or the old one again if installing failed."""
+    try:
+        core.program.install(argv)
+    except Exception as exception:
+        _logger.exception(
+            "IMAGINATION update failed; continuing with the installed version"
+        )
+        _error_dialog(exception)
+
+    logging.shutdown()  # The program started writes the same log
+    core.program.start(argv)
 
 
 def _register_bundled_bots() -> None:
@@ -202,6 +266,23 @@ def _register_bundled_bots() -> None:
             core.output.count(len(specs), "bot"),
             ", ".join(specs),
         )
+
+
+def _confirm(question: str) -> bool:
+    """Ask `question` at the console: yes for y or yes, no for anything else, Enter,
+    or Ctrl+C."""
+    try:
+        answer = input(f"{question} [y/N] ")
+    except EOFError:
+        answer = ""
+        print()
+    except KeyboardInterrupt:
+        core.api.safe_abort()
+        answer = ""
+        print()
+
+    _logger.debug("%s [y/N] %s", question, answer)  # For the log file
+    return answer.strip().lower() in ("y", "yes")
 
 
 def _error_dialog(error: BaseException | str) -> None:
@@ -361,9 +442,15 @@ if __name__ == "__main__":
         sys.exit(core.worker.main(sys.argv[2:]))
 
     core.output.setup()
+
+    if sys.argv[1:2] == [core.program.INSTALL_FLAG]:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ctrl+C in a shared console
+        _guard(lambda: _install_update(sys.argv[2:]))
+        sys.exit()
+
     _cli.add_typer(_cli_presets, name="presets")
     _cli.add_typer(_cli_run, name="run")
-    _guard(update)
+    _guard(lambda: _update(on_launch=True))
     _guard(_cli_presets_load)
     print(_BANNER)
     _guard(lambda: _dispatch(("--help",)))
