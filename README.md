@@ -30,7 +30,7 @@ run tmg --cycles 5 --collect-apples
 
 - An option takes a value after a space, e.g. `--cycles 5`
 - A flag is just its name, e.g. `--collect-apples`
-- Put quotes around anything with spaces in it, e.g. a typed-out `--plan` in mitama_socket
+- Put quotes around anything with spaces in it, e.g. a typed `--plan` in mitama_socket
 
 ## Examples
 
@@ -63,10 +63,10 @@ run tmg --cycles 5 --collect-apples
 
 ## Presets
 
-A preset saves a specified command under a name of your own, so you don't have to retype it.
+A preset saves a command under a convenient alias you specify, so you don't have to retype it.
 
 1. Win+R, paste `%LOCALAPPDATA%\IMAGINATION\resources\presets.json`, and press Enter
-2. Add your presets as `"name": "command"`, with a comma between them:
+2. Add your presets as `"alias": "command"`, with a comma between them:
 
    ```
    {
@@ -76,9 +76,9 @@ A preset saves a specified command under a name of your own, so you don't have t
    ```
 
 3. Save the file, then in the console, type `presets load` (or restart IMAGINATION)
-4. Type the preset's name, e.g. `r8`, to run it
+4. Type the preset's alias, e.g. `r8`, to run it
 
-Show the loaded presets with `presets list`. A preset runs exactly as saved; you can't add options after its name. A preset whose name collides with a preexisting command (e.g. `run`) is skipped.
+Show the loaded presets with `presets list`. A preset runs exactly as saved; you can't add options after its alias. A preset whose alias collides with a preexisting command, e.g. `run`, is skipped.
 
 ## Errors
 Win+R, paste `%LOCALAPPDATA%\IMAGINATION`, and press Enter. Send me your IMAGINATION.log, and an explanation of your issue, and I will look into it. Thanks!
