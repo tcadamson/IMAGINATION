@@ -159,10 +159,18 @@ def update() -> None:
         core.presets.ensure_presets()
 
         try:
-            core.registry.sync()
+            archive = core.registry.request_archive()
         except Exception as exception:  # Update attempt is best-effort
-            _logger.exception("update failed; carrying on with the installed bots")
+            _logger.exception("update check failed; continuing")
             _error_dialog(exception)
+        else:
+            try:
+                core.registry.sync(archive)
+            except Exception as exception:
+                _logger.exception(
+                    "bot update failed; continuing with the installed bots"
+                )
+                _error_dialog(exception)
 
     _logger.info("Done")
     _register_bundled_bots()
