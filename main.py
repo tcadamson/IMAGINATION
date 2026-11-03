@@ -268,21 +268,61 @@ def _register_bundled_bots() -> None:
         )
 
 
-def _confirm(question: str) -> bool:
-    """Ask `question` at the console: yes for y or yes, no for anything else, Enter,
-    or Ctrl+C."""
+def _ask(prompt: str) -> str | None:
+    """Ask at the console with `prompt`: the answer typed, or None for Ctrl+C or the
+    input's end."""
     try:
-        answer = input(f"{question} [y/N] ")
+        answer = input(prompt)
     except EOFError:
-        answer = ""
+        answer = None
         print()
     except KeyboardInterrupt:
         core.api.safe_abort()
-        answer = ""
+        answer = None
         print()
 
-    _logger.debug("%s [y/N] %s", question, answer)  # For the log file
-    return answer.strip().lower() in ("y", "yes")
+    _logger.debug("%s%s", prompt, answer or "")  # For the log file
+    return answer
+
+
+def _confirm(question: str) -> bool:
+    """Ask `question` at the console: yes for y or yes, no for anything else, Enter,
+    or Ctrl+C."""
+    answer = _ask(f"{question} [y/N] ")
+    return answer is not None and answer.strip().lower() in ("y", "yes")
+
+
+def _choose_client(spec: core.bundle.BundledBotSpec) -> int | None:
+    """Return the process ID of the client to run `spec` on: the only one open, or
+    the one the user picks by its character's name when several are. None if the user
+    aborts; RuntimeError if none is open."""
+    pids = sorted({client.pid for client in core.api.Client.locate_all()})
+
+    if len(pids) == 1:
+        return pids[0]
+
+    try:
+        names = core.bundle.character_names(spec.bundle_path, pids)
+    except KeyboardInterrupt:
+        core.api.safe_abort()
+        return None
+
+    _logger.info(
+        "%s are open:\n%s",
+        core.output.count(len(pids), "IMAGINE client"),
+        "\n".join(
+            f"  {n}. {names.get(pid, f'pid {pid}')}" for n, pid in enumerate(pids, 1)
+        ),
+    )
+
+    while True:
+        answer = _ask(f"Run {spec.bot_id} on which one? [1-{len(pids)}] ")
+
+        if answer is None:
+            return None
+
+        if answer.strip().isdigit() and 1 <= int(answer) <= len(pids):
+            return pids[int(answer) - 1]
 
 
 def _error_dialog(error: BaseException | str) -> None:
@@ -302,11 +342,15 @@ def _launch_bundled(
     options: collections.abc.Mapping[str, object],
     verbose: bool,
 ) -> None:
-    """Run the bundled bot `spec` against the located client until it ends."""
+    """Run the bundled bot `spec` against the chosen client until it ends."""
     try:
-        pid = core.api.Client.locate_all()[0].pid
+        pid = _choose_client(spec)
     except RuntimeError as exception:
         _logger.error("can't start:\n  - %s", core.output.capitalize(str(exception)))
+        return
+
+    if pid is None:
+        _logger.info(core.api.ABORT_MESSAGE)
         return
 
     with core.output.verbose(verbose):
@@ -440,6 +484,9 @@ def _guard(callback: collections.abc.Callable[[], None]) -> None:
 if __name__ == "__main__":
     if sys.argv[1:2] == [core.worker.FLAG]:
         sys.exit(core.worker.main(sys.argv[2:]))
+
+    if sys.argv[1:2] == [core.worker.NAMES_FLAG]:
+        sys.exit(core.worker.names_main(sys.argv[2:]))
 
     core.output.setup()
 

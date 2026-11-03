@@ -7,7 +7,7 @@ or from `--catalog PATH` (the bot repository's dist/bots.json).
 Every line comes from the real code: main's commands and startup, core's output as
 core.output sets it up, and a worker in its own process for each run. Stand-ins: the bot
 bundle (a stub that acts out each way a run ends, chosen by the client's process ID), the
-client window, the update branch, the error dialog, shown as a "[dialog]" line, and for
+client windows, the update branch, the error dialog, shown as a "[dialog]" line, and for
 the program's own update the built program and the processes it starts, shown as
 "[started ...]" lines. Files go to a temporary directory, shown as
 %LOCALAPPDATA%\\IMAGINATION; the program's own directory, or the built program's
@@ -43,6 +43,8 @@ _OLD_VERSION: typing.Final = "1.0.0"  # The program updated from: any older vers
 
 # The stub bundle's way to end, by the client's process ID
 _FINISHED, _STOPPED, _CRASHED, _ABORTED, _EXIT_CODE, _NATIVE = range(1, 7)
+# The stub bundle's characters, by the client's process ID: none logged in on the others
+_CHARACTERS: typing.Final = {_FINISHED: "Akemi", _STOPPED: "Daichi"}
 
 _STUB_BUNDLE: typing.Final = f"""
 import logging
@@ -75,11 +77,16 @@ def run(bot, options, pid):
         sys.__stdout__.write("Windows fatal exception: access violation\\n")
         sys.__stdout__.flush()
         os._exit(-0x3FFFFFFB)  # 0xC0000005 as a C int, an access violation
+
+
+def character_name(pid):
+    return {_CHARACTERS!r}.get(pid)
 """
 
 _OTHER_API_BUNDLE: typing.Final = (
     "API_VERSION = 99\n\ndef run(bot, options, pid):\n    return 0\n"
 )
+_UNNAMING_BUNDLE: typing.Final = _STUB_BUNDLE.split("\n\ndef character_name")[0]
 _BROKEN_BUNDLE: typing.Final = 'raise ImportError("(a bundle that fails to load)")\n'
 
 _main: types.ModuleType
@@ -188,17 +195,17 @@ def _start() -> None:
 
 
 @contextlib.contextmanager
-def _client(pid: int | None):
-    """The client window found as one of process `pid`, or none if None."""
+def _client(*pids: int):
+    """A client window found for each process of `pids`, or none without any."""
     api = _main.core.api
     window_title, locate_all = api._window_title, api.Client.locate_all
 
-    if pid is None:
+    if not pids:
         api._window_title = lambda handle: ""
     else:
         api.Client.locate_all = classmethod(
-            lambda cls, identifier=api.Client.CLIENT_IDENTIFIER: (
-                types.SimpleNamespace(pid=pid),
+            lambda cls, identifier=api.Client.CLIENT_IDENTIFIER: tuple(
+                types.SimpleNamespace(pid=pid) for pid in pids
             )
         )
 
@@ -552,22 +559,62 @@ def _runs() -> None:
     """Each way a run ends, framed as IMAGINATION frames it."""
     _fresh()
     bot = _bot_without_options()
-    for pid, what in (
-        (None, "no client"),
-        (_FINISHED, "finished"),
-        (_STOPPED, "stopped"),
-        (_CRASHED, "crashed"),
-        (_ABORTED, "Ctrl+C"),
-        (_EXIT_CODE, "an exit code of its own"),
-        (_NATIVE, "a native crash"),
+    for pids, what in (
+        ((), "no client"),
+        ((_FINISHED,), "finished"),
+        ((_STOPPED,), "stopped"),
+        ((_CRASHED,), "crashed"),
+        ((_ABORTED,), "Ctrl+C"),
+        ((_EXIT_CODE,), "an exit code of its own"),
+        ((_NATIVE,), "a native crash"),
     ):
         print(f"({what})")
-        with _client(pid):
+        with _client(*pids):
             _type(f"run {bot}")
 
     print("(finished, with --verbose)")
     with _client(_FINISHED):
         _type(f"run --verbose {bot}")
+
+
+@_scenario
+def _clients() -> None:
+    """Several clients open: chosen by their characters' names, one with none logged
+    in, an answer out of range, Ctrl+C, and a bundle that can't name them."""
+    bot = _bot_without_options()
+    typed = builtins.input
+
+    for name, pids, answers, bundle in (
+        ("two", (_FINISHED, _STOPPED), ["1"], None),
+        ("one with no character", (_STOPPED, _FINISHED, _CRASHED), ["4", "2"], None),
+        ("Ctrl+C", (_FINISHED, _STOPPED), [None], None),
+        (
+            "a bundle that can't name them",
+            (_FINISHED, _STOPPED),
+            ["1"],
+            _UNNAMING_BUNDLE,
+        ),
+    ):
+        _fresh()
+        if bundle is not None:
+            _install(bundle)
+            _register()
+
+        def input_(prompt: str = "") -> str:
+            answer = answers.pop(0)
+            if answer is None:  # Ctrl+C
+                print(prompt, end="")
+                raise KeyboardInterrupt
+            print(f"{prompt}{answer}")
+            return answer
+
+        print(f"({name})")
+        builtins.input = input_
+        try:
+            with _client(*pids):
+                _type(f"run {bot}")
+        finally:
+            builtins.input = typed
 
 
 @_scenario
@@ -612,7 +659,7 @@ def _presets() -> None:
     )
     _type("presets load")
     _type("presets list")
-    with _client(None):
+    with _client():
         _type("f5")
 
     _write("resources/presets.json", "{")

@@ -17,12 +17,14 @@ A bot with `extra` true also takes options the catalog doesn't declare, each wit
 value, which its help describes; they reach the bundle as typed, in a list under "extra".
 
 A bundled bot runs in a worker (core.worker) attached to one client process. Its log
-records and printed lines are logged and printed here as IMAGINATION's own.
+records and printed lines are logged and printed here as IMAGINATION's own. When several
+clients are open, a worker of its own reads the names of their characters first.
 """
 
 import collections.abc
 import dataclasses
 import hashlib
+import io
 import json
 import logging
 import pathlib
@@ -48,6 +50,9 @@ _OPTION_TYPES: typing.Final[collections.abc.Mapping[str, type]] = {
 
 _STOP_SECONDS: typing.Final = (
     10.0  # Allowed to a worker after Ctrl+C before it is ended
+)
+_NAMES_SECONDS: typing.Final = (
+    10.0  # Allowed to a worker naming the clients' characters before it is ended
 )
 
 _logger: logging.Logger = logging.getLogger(__name__)
@@ -164,17 +169,21 @@ def load_catalog(
     }
 
 
-def _command(
-    spec: BundledBotSpec, options: collections.abc.Mapping[str, object], pid: int
-) -> list[str]:
-    """Command line starting a worker for `spec`: this program, again."""
-    program = (
+def _program() -> list[str]:
+    """Command line starting this program again."""
+    return (
         [sys.executable]
         if getattr(sys, "frozen", False)
         else [sys.executable, str(core.api.ROOT_DIRECTORY / "main.py")]
     )
+
+
+def _command(
+    spec: BundledBotSpec, options: collections.abc.Mapping[str, object], pid: int
+) -> list[str]:
+    """Command line starting a worker for `spec`: this program, again."""
     return [
-        *program,
+        *_program(),
         core.worker.FLAG,
         str(spec.bundle_path),
         spec.bot_id,
@@ -184,12 +193,14 @@ def _command(
 
 
 class _Relay(threading.Thread):
-    """Logs and prints a worker's output as it comes, keeping its last error."""
+    """Logs and prints a worker's output as it comes, keeping its last error and the
+    characters' names it sent."""
 
     def __init__(self, stream: typing.TextIO):
         super().__init__(daemon=True)
         self._stream = stream
         self.error: str | None = None
+        self.names: dict[str, object] = {}
 
     def run(self) -> None:
         for line in self._stream:
@@ -216,6 +227,10 @@ class _Relay(threading.Thread):
             core.output.show(message["text"])
             return
 
+        if message.get("kind") == "names":
+            self.names = message["names"]
+            return
+
         level, created, exc = message["level"], message["created"], message["exc"]
         record = logging.makeLogRecord(
             {
@@ -232,6 +247,40 @@ class _Relay(threading.Thread):
 
         if level >= logging.ERROR:
             self.error = exc.rstrip().splitlines()[-1] if exc else message["message"]
+
+
+def character_names(
+    bundle_path: pathlib.Path, pids: collections.abc.Sequence[int]
+) -> dict[int, str]:
+    """Return the name of the character logged in on each client of `pids`, as the
+    bundle at `bundle_path` reads it in a worker. A client with no character logged in,
+    or that the worker can't read, is left out.
+
+    Ctrl+C ends the worker, and the KeyboardInterrupt goes on to the caller.
+    """
+    command = [*_program(), core.worker.NAMES_FLAG, str(bundle_path), *map(str, pids)]
+    _logger.debug("starting worker: %s", subprocess.list2cmdline(command))
+
+    try:
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_NAMES_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        _logger.debug(
+            "can't name the characters: the worker took over %s seconds",
+            f"{_NAMES_SECONDS:g}",
+        )
+        return {}
+
+    relay = _Relay(io.StringIO(result.stdout))
+    relay.run()  # Here, not in a thread: the output is all in
+    names = {pid: relay.names.get(str(pid)) for pid in pids}
+    return {pid: name for pid, name in names.items() if isinstance(name, str) and name}
 
 
 def run(
