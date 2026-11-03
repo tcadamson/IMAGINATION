@@ -1,5 +1,5 @@
 {
-  "bundle": "881acf3422f14e6b27b659fd5f963de50d400a7d0bedb01d581940caa12347ee",
+  "bundle": "5e3804263984283060477d0c3b11de74c0c294f1f357b03e29f35b45e7d8559e",
   "bots": {
     "rebirth": {
       "help": "Rebirth partner to the specified ranks\n\nStart in the cathedral and the bot will move you to the correct location. With --mitama, a mitama fusion will be performed and --mitama-ranks becomes required. After any stop, the same command will continue where you left off\n\nWhichever XP incense was used prior to starting, the bot will renew before its effect expires, if it is present in the inventory (except x2,010). If digitalized, the bot will pause and prompt you to reset before digitalization expires\n\n--check will validate your run without running",
@@ -62,7 +62,7 @@
           "type": "int",
           "default": null,
           "min": 1,
-          "help": "How many rolls to make; otherwise, until the items run out"
+          "help": "How many rolls; otherwise, until the items run out"
         },
         "attack": {
           "type": "int",
@@ -301,18 +301,6 @@
           "default": null,
           "min": 1,
           "help": "Reach a total of Support of N or more over the path's slots"
-        },
-        "phys_defense": {
-          "type": "int",
-          "default": null,
-          "min": 1,
-          "help": "Reach a total of Phys. Defense of N or more over the path's slots"
-        },
-        "mag_defense": {
-          "type": "int",
-          "default": null,
-          "min": 1,
-          "help": "Reach a total of Mag. Defense of N or more over the path's slots"
         }
       }
     }
