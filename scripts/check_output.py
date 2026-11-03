@@ -206,7 +206,7 @@ def _updates(manifest: dict[str, object], downloads: dict[str, bytes] | None = N
     """Updates from a branch holding `manifest` and the user's resources, as on a start
     without IMAGINATION_USER_DIRECTORY; `downloads` by URL, or None for no network."""
     registry, paths = _main.core.registry, _main.core.paths
-    request_archive, request = registry._request_archive, registry._request
+    request_archive, request = registry.request_archive, registry.request
     override = paths.USER_DIRECTORY_OVERRIDE_PASSED
 
     def archive(url: str = "") -> dict[str, bytes]:
@@ -225,13 +225,13 @@ def _updates(manifest: dict[str, object], downloads: dict[str, bytes] | None = N
 
         return typing.cast(dict[str, bytes], downloads)[url]
 
-    registry._request_archive, registry._request = archive, download
+    registry.request_archive, registry.request = archive, download
     paths.USER_DIRECTORY_OVERRIDE_PASSED = False
 
     try:
         yield
     finally:
-        registry._request_archive, registry._request = request_archive, request
+        registry.request_archive, registry.request = request_archive, request
         paths.USER_DIRECTORY_OVERRIDE_PASSED = override
 
 

@@ -23,7 +23,7 @@ import core.paths
 _ARCHIVE_URL: typing.Final = (
     f"https://codeload.github.com/tcadamson/IMAGINATION/tar.gz/refs/heads/{core.BRANCH}"
 )
-_RELEASES_URL: typing.Final = "https://github.com/tcadamson/IMAGINATION/releases"
+RELEASES_URL: typing.Final = "https://github.com/tcadamson/IMAGINATION/releases"
 
 _PRE_RELEASE_PHASES: typing.Final = ("a", "b", "rc")
 
@@ -32,7 +32,7 @@ type _ManifestEntry = str | dict[str, str]
 _logger: logging.Logger = logging.getLogger(__name__)
 
 
-def _request(url: str, timeout: float = 30.0) -> bytes:
+def request(url: str, timeout: float = 30.0) -> bytes:
     """Download the body at `url`, which must be https."""
     if urllib.parse.urlsplit(url).scheme != "https":
         raise ValueError(f"not an https URL: {url}")
@@ -44,10 +44,10 @@ def _request(url: str, timeout: float = 30.0) -> bytes:
         return response.read()
 
 
-def _request_archive(url: str = _ARCHIVE_URL) -> dict[str, bytes]:
+def request_archive(url: str = _ARCHIVE_URL) -> dict[str, bytes]:
     """Download the update branch tarball, keyed by relative path."""
     archive = {}
-    data = _request(url)
+    data = request(url)
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
         for member in tar:
             extracted = tar.extractfile(member) if member.isfile() else None
@@ -86,7 +86,7 @@ def _atomic_write(path: pathlib.Path, data: bytes) -> None:
         raise
 
 
-def _version_key(version: str) -> tuple[tuple[int, ...], tuple[int, int]]:
+def version_key(version: str) -> tuple[tuple[int, ...], tuple[int, int]]:
     """Sort key for a PEP 440 `version` of the form 2.0.0, 2.0.0b5, or 2.1rc1.
 
     Trailing zeros of the release are dropped (2.0 equals 2.0.0), and a pre-release
@@ -111,14 +111,14 @@ def _supported(relative_path: str, entry: _ManifestEntry) -> bool:
     """Whether this program is recent enough for `entry`, warning if it is not."""
     requires = entry.get("requires") if isinstance(entry, dict) else None
 
-    if requires is None or _version_key(core.VERSION) >= _version_key(requires):
+    if requires is None or version_key(core.VERSION) >= version_key(requires):
         return True
 
     _logger.warning(
         "skipping %s: it needs IMAGINATION %s or later; download it from %s",
         relative_path,
         core.version_text(requires),
-        _RELEASES_URL,
+        RELEASES_URL,
     )
     return False
 
@@ -151,7 +151,7 @@ def sync(archive: dict[str, bytes] | None = None) -> None:
     `url` with its `sha256`, skipped if its `requires` names a newer program version.
     """
     if archive is None:
-        archive = _request_archive()
+        archive = request_archive()
 
     manifest: dict[str, _ManifestEntry] = json.loads(archive["resources/manifest.json"])
 
@@ -173,9 +173,7 @@ def sync(archive: dict[str, bytes] | None = None) -> None:
             continue
 
         data = (
-            _request(entry["url"])
-            if isinstance(entry, dict)
-            else archive[relative_path]
+            request(entry["url"]) if isinstance(entry, dict) else archive[relative_path]
         )
         sha256_actual = hashlib.sha256(data).hexdigest()
 
