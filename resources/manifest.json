@@ -1,9 +1,9 @@
 {
-    "resources/bots.json": "a2588f5466d21ef9c62995070cb74029a78a284b5ea78731b631a57851280fbd",
-    "resources/bundles/5e3804263984283060477d0c3b11de74c0c294f1f357b03e29f35b45e7d8559e.pyd": {
+    "resources/bots.json": "611402d193722b6ec301852c2aeb4b8afb45636967aa335da2ec16398a660568",
+    "resources/bundles/575856d7e778b3c1da2aebc4ce4cd12a35d1fc939b90a513df6af015f9fc950f.pyd": {
         "requires": "2.0.0",
-        "sha256": "5e3804263984283060477d0c3b11de74c0c294f1f357b03e29f35b45e7d8559e",
-        "url": "https://github.com/tcadamson/IMAGINATION/releases/download/v2.0.0/bundle.cp314-win_amd64.pyd"
+        "sha256": "575856d7e778b3c1da2aebc4ce4cd12a35d1fc939b90a513df6af015f9fc950f",
+        "url": "https://raw.githubusercontent.com/tcadamson/IMAGINATION/c380fb3b27744b4aa89f55d736bd2f5735cfce83/bundle.cp314-win_amd64.pyd"
     },
     "resources/presets.default.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
 }
