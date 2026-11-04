@@ -1,9 +1,9 @@
 {
-    "resources/bots.json": "af432951ac3c19f3735e6b7257d40a1f313ff2cd2b1963be329650643e2afe63",
-    "resources/bundles/d732822934919a2bf5869167d8a47ebd0f65a84647af044d6e12701099b0b95d.pyd": {
+    "resources/bots.json": "82ae0f2e656bb2d66494fb7a5b43010c7d906009f85047ab7d162493fa8fd98c",
+    "resources/bundles/97f37a3b435c9867bc6de51f10074222dda05160527fc2a9af803c9bb7c7f3e0.pyd": {
         "requires": "2.0.0",
-        "sha256": "d732822934919a2bf5869167d8a47ebd0f65a84647af044d6e12701099b0b95d",
-        "url": "https://raw.githubusercontent.com/tcadamson/IMAGINATION/1b8208c37a33e37a6ad716c53fbcff3ed1b8a12f/bundle.cp314-win_amd64.pyd"
+        "sha256": "97f37a3b435c9867bc6de51f10074222dda05160527fc2a9af803c9bb7c7f3e0",
+        "url": "https://raw.githubusercontent.com/tcadamson/IMAGINATION/4e26325892ad482863e5b0eee6204ee422691e61/bundle.cp314-win_amd64.pyd"
     },
     "resources/presets.default.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
 }
