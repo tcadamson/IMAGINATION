@@ -44,6 +44,7 @@ run tmg --cycles 5 --collect-apples
 | `run tmg` | Infinite cycles until you stop it |
 | `run tmg --cycles 10` | Only 10 cycles |
 | `run tmg --collect-apples` | Additionally collects apples from the golden light |
+| `run tmg --collect-value-packs` | Additionally collects value packs (Value Package: Kamikaze, Wedge) from the boss box |
 | `run tmg --false` | Goes straight to the roof, keeping the ghosts (two MAG Presser α per cycle) |
 | `run demon_force` | Rolls until the items are exhausted, leaving you to accept or discard each roll |
 | `run demon_force --rolls 20` | Only 20 rolls |
