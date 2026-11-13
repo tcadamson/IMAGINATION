@@ -1,5 +1,5 @@
 {
-  "bundle": "f792980335af6dbdf524b8e447af7d738f0236294ab190e75c60f2b31906a381",
+  "bundle": "78fb6e0a37277b1c909585320bcca59d3b2683d74115073747df2b58314b66cd",
   "bots": {
     "rebirth": {
       "help": "Rebirth partner to the specified ranks\n\nStart in the cathedral and the bot will move you to the correct location. With --mitama, a mitama fusion will be performed and --mitama-ranks becomes required. After any stop, the same command will continue where you left off\n\nWhichever XP incense was used prior to starting, the bot will renew before its effect expires, if it is present in the inventory (except x2,010). If digitalized, the bot will pause and prompt you to reset before digitalization expires\n\n--check will validate your run without running",
@@ -35,7 +35,7 @@
       }
     },
     "tmg": {
-      "help": "Farm hazel branches without wanting to mudo yourself\n\nStart in the TMG lobby and the bot will move and interact as necessary, leaving only the Lucifuge fight to be done manually\n\nThe bot automatically loots from the box: Magnetite, MAG Presser α, Hazel Branches, and anything that trades for branches (Hazel Wand, DCM: Lucifuge, Demon Soul: Lucifuge), and will skip the golden light unless you elect to collect from it",
+      "help": "Farm hazel branches without wanting to mudo yourself\n\nStart in the TMG lobby and the bot will move and interact as necessary, leaving only the Lucifuge fight to be done manually\n\nThe bot automatically collects from the boss box: Magnetite, MAG Presser α, Hazel Branches, and anything that trades for branches (Hazel Wand, DCM: Lucifuge, Demon Soul: Lucifuge); it will skip any remaining items, as well as the golden light, unless you elect to collect them",
       "options": {
         "cycles": {
           "type": "int",
@@ -51,12 +51,17 @@
         "collect_apples": {
           "type": "bool",
           "default": false,
-          "help": "Collect apples from the golden light; otherwise, the bot ignores it"
+          "help": "Collect apples from the golden light"
         },
         "collect_value_packs": {
           "type": "bool",
           "default": false,
           "help": "Collect value packs (Value Package: Kamikaze, Wedge) from the boss box"
+        },
+        "collect_boss_box": {
+          "type": "bool",
+          "default": false,
+          "help": "Collect all items from the boss box"
         }
       }
     },
