@@ -1,5 +1,5 @@
 {
-  "bundle": "8997aec9e51088549e0c4bbb26eb465ae882e1138e40736f1e264cd3071aeed2",
+  "bundle": "627c16ee54f945f4789a44b07e7c9d85a031d6b0c79890f22a1bbf3737e06e40",
   "bots": {
     "rebirth": {
       "help": "Rebirth partner to the specified ranks\n\nStart in the cathedral and the bot will move you to the correct location. With --mitama, a mitama fusion will be performed and --mitama-ranks becomes required. After any stop, the same command will continue where you left off\n\nWhichever XP incense was used prior to starting, the bot will renew before its effect expires, if it is present in the inventory (except x2,010). If digitalized, the bot will pause and prompt you to reset before digitalization expires\n\n--check will validate your run without running",
@@ -35,7 +35,7 @@
       }
     },
     "tmg": {
-      "help": "Farm hazel branches without wanting to mudo yourself\n\nStart in the TMG lobby and the bot will move and interact as necessary, leaving only the Lucifuge fight to be done manually\n\nThe bot automatically collects from the boss box: Magnetite, MAG Presser α, Hazel Branches, and anything that trades for branches (Hazel Wand, DCM: Lucifuge, Demon Soul: Lucifuge); it will skip any remaining items, as well as the golden light, unless you elect to collect them",
+      "help": "Farm hazel branches without wanting to mudo yourself\n\nStart in the TMG lobby with a Great Grimoire equipped and the bot will move and interact as necessary, leaving only the Lucifuge fight to be done manually\n\nThe bot automatically collects from the boss box: Magnetite, MAG Presser α, Hazel Branches, and anything that trades for branches (Hazel Wand, DCM: Lucifuge, Demon Soul: Lucifuge); it will skip any remaining items, as well as the golden light, unless you elect to collect them",
       "options": {
         "cycles": {
           "type": "int",
@@ -195,6 +195,17 @@
         }
       },
       "extra": true
+    },
+    "mot": {
+      "help": "Mot until you drop\n\nStart in Nakano Camp with Ziotite and the bot will move and interact as necessary, leaving only the Mot fight to be done manually\n\nThe bot automatically collects everything from the boss box: EoD Tears, Transformation Card: Minor Arcana, and Theater of Death epitaphs",
+      "options": {
+        "cycles": {
+          "type": "int",
+          "default": null,
+          "min": 1,
+          "help": "How many cycles to do; infinite otherwise"
+        }
+      }
     },
     "mitama_socket": {
       "help": "Allocate mitama on partner according to the specified plan\n\nStart in the cathedral and the bot will move you to the correct location. The bot adds only what partner lacks from the plan and never removes. For the plan, you may input a string matching the specified format, or a share link from https://new-moon-database.streamlit.app/mitama\n\n--check will validate your run without running",
