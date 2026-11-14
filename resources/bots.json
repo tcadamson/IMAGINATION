@@ -1,5 +1,5 @@
 {
-  "bundle": "78fb6e0a37277b1c909585320bcca59d3b2683d74115073747df2b58314b66cd",
+  "bundle": "afef88c25d58d62d412c94472e60752aade66b02c1be1151a53e58efea9a3832",
   "bots": {
     "rebirth": {
       "help": "Rebirth partner to the specified ranks\n\nStart in the cathedral and the bot will move you to the correct location. With --mitama, a mitama fusion will be performed and --mitama-ranks becomes required. After any stop, the same command will continue where you left off\n\nWhichever XP incense was used prior to starting, the bot will renew before its effect expires, if it is present in the inventory (except x2,010). If digitalized, the bot will pause and prompt you to reset before digitalization expires\n\n--check will validate your run without running",
@@ -66,7 +66,7 @@
       }
     },
     "demon_force": {
-      "help": "Roll demon force items on partner\n\nNormally, the bot will wait for you to accept or discard a roll before continuing. Including any of the aliases below will put the bot in whitelist mode and discard any roll or category of roll not included in the set of aliases passed\n\nFor a desired effect that doesn't already have an alias: match it by name, using hyphens for spaces, and the lowest value kept (0 for any), e.g. --spread-resist 30\n\nItem priority: green sands > red sands > blue sands > scabbards > loops",
+      "help": "Roll demon force items on partner\n\nNormally, the bot will wait for you to accept or discard a roll before continuing. Including any of the aliases below, or any effect named as described below, will put the bot in whitelist mode and discard any roll or category of roll not included in the set of aliases passed\n\nItem priority: green sands > red sands > blue sands > scabbards > loops\n\nIMPORTANT: If the desired effect(s) do not appear in the set of aliases below, you may specify them yourself as the game names them, using hyphens for spaces, e.g. --luck 0 --spread-resist 30; the aliases below are simply shorthand forms for the most commonly desired effects",
       "options": {
         "rolls": {
           "type": "int",
