@@ -1,5 +1,5 @@
 {
-  "bundle": "dd472e7c3e4b039d3bc488bc66f80c8d2726da66754f18bcee8050579bb261de",
+  "bundle": "8997aec9e51088549e0c4bbb26eb465ae882e1138e40736f1e264cd3071aeed2",
   "bots": {
     "rebirth": {
       "help": "Rebirth partner to the specified ranks\n\nStart in the cathedral and the bot will move you to the correct location. With --mitama, a mitama fusion will be performed and --mitama-ranks becomes required. After any stop, the same command will continue where you left off\n\nWhichever XP incense was used prior to starting, the bot will renew before its effect expires, if it is present in the inventory (except x2,010). If digitalized, the bot will pause and prompt you to reset before digitalization expires\n\n--check will validate your run without running",
@@ -51,17 +51,17 @@
         "collect_apples": {
           "type": "bool",
           "default": false,
-          "help": "Collect apples from the golden light"
+          "help": "Additionally collect apples from the golden light"
         },
-        "collect_value_packs": {
+        "collect_stackables": {
           "type": "bool",
           "default": false,
-          "help": "Collect value packs (Value Package: Kamikaze, Wedge) from the boss box"
+          "help": "Additionally collect Value Package (Kamikaze, Wedge), Sand of Logic (Set A, Set B), Ace Card, Fighting Spirit"
         },
-        "collect_boss_box": {
+        "collect_unstackables": {
           "type": "bool",
           "default": false,
-          "help": "Collect all items from the boss box, not just the default selection"
+          "help": "Additionally collect Great Grimoire and all DTs"
         }
       }
     },
