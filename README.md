@@ -51,7 +51,7 @@ run tmg --cycles 5 --collect-apples
 | `run demon_force --lbp 50` | Discards every roll that isn't Limit Break Power 50% or more |
 | `run demon_force --lbp 50 --tac 40` | Keeps Limit Break Power 50% or more, TA Chance 40% or more; discards the rest |
 | `run demon_force --lbp 0` | Keeps any Limit Break Power roll |
-| `run demon_force --spread-resist 30` | An effect with no preexisting alias, specified by name with hyphens for spaces |
+| `run demon_force --luck 0 --spread-resist 30` | Two effects with no preexisting aliases, specified by name with hyphens for spaces |
 | `run mitama_socket --plan <share link>` | Allocates the plan using a [mitama planner](https://new-moon-database.streamlit.app/mitama) share link |
 | `run mitama_socket --plan <share link> --check` | Shows what the plan would allocate and cost, without running it |
 | `run mitama_socket --plan "A4N4 S4 A4 N4 N2S2 K2S2 N2K2 - - - - A4S4"` | Allocates the plan using my format; one mix per path, in order, `-` for none |
