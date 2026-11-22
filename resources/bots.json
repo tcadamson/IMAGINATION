@@ -1,5 +1,5 @@
 {
-  "bundle": "627c16ee54f945f4789a44b07e7c9d85a031d6b0c79890f22a1bbf3737e06e40",
+  "bundle": "383b09928e7012d121c4286b02416718b62050438b87b7fb0b8bf74ccdc00e85",
   "bots": {
     "rebirth": {
       "help": "Rebirth partner to the specified ranks\n\nStart in the cathedral and the bot will move you to the correct location. With --mitama, a mitama fusion will be performed and --mitama-ranks becomes required. After any stop, the same command will continue where you left off\n\nWhichever XP incense was used prior to starting, the bot will renew before its effect expires, if it is present in the inventory (except x2,010). If digitalized, the bot will pause and prompt you to reset before digitalization expires\n\n--check will validate your run without running",
